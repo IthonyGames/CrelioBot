@@ -12,6 +12,7 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsF
     rateLimitOnce: new Set(),
     files: new Map(), // attachment id → bytes, served at /files/:id
     roles: [{ id: guildId, name: '@everyone' }],
+    notInGuild: new Set(), // bot user ids that were never invited
   }
   const userFor = token => bots[token] ?? { id: '1', username: 'unknown-bot', bot: true }
 
@@ -71,10 +72,23 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsF
       return reply(429, { message: 'You are being rate limited.', retry_after: 0.05, global: false })
     }
     let m
+    if (key === 'GET /users/@me') return reply(200, userFor(token))
+    if (key === 'GET /applications/@me') return reply(200, { id: userFor(token).id, flags: 1 << 19 })
+    if ((m = path.match(/^\/guilds\/(\d+)\/members\/@me$/)) && req.method === 'PATCH') {
+      if (state.notInGuild.has(userFor(token).id)) return reply(404, { message: 'Unknown Guild', code: 10004 })
+      return reply(200, { nick: json.nick, user: userFor(token) })
+    }
+    if ((m = path.match(/^\/guilds\/(\d+)\/roles\/(\d+)$/)) && req.method === 'DELETE') {
+      const i = state.roles.findIndex(r => r.id === m[2])
+      if (i < 0) return reply(404, { message: 'Unknown Role', code: 10011 })
+      state.roles.splice(i, 1)
+      return reply(204)
+    }
     if ((m = path.match(/^\/channels\/(\d+)$/))) {
       const ch = state.channels.get(m[1])
       if (!ch) return reply(404, { message: 'Unknown Channel', code: 10003 })
       if (req.method === 'GET') return reply(200, ch)
+      if (req.method === 'DELETE') { state.channels.delete(m[1]); return reply(200, ch) }
       if (req.method === 'PATCH') {
         if (json.archived !== undefined) ch.thread_metadata = { ...ch.thread_metadata, archived: json.archived }
         return reply(200, ch)

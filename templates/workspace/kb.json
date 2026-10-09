@@ -15,7 +15,7 @@
     "roles": {}
   },
   "agents": {
-    "disabled": [],
+    "enabled": ["kb-researcher", "web-researcher", "planner"],
     "custom": []
   },
   "allow": {

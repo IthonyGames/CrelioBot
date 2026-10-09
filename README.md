@@ -22,14 +22,14 @@ Discord server
 ## Features
 
 - **One team per knowledge base**: one Claude Code session per KB, so contexts and files never mix. A Router in the server-wide channel forwards requests to the right team.
-- **Ten core agents**: Manager, KB Researcher, Web Researcher, Brainstormer, Artist, UX Expert, Marketing, Lawyer, Planner, Coder. Each is a real Discord bot you can @mention.
+- **Ten core agents**: Manager, KB Researcher, Web Researcher, Brainstormer, Artist, UX Expert, Marketing, Lawyer, Planner, Coder. Each is a real Discord bot you can @mention, and only the ones a team needs are turned on.
 - **A thread per task**: the Manager reuses or opens it, syncs your task system (local board, Notion, Motion, markdown tickets, or your own skill), runs the specialists in pipeline order (in parallel where possible), then posts a summary with the results and closes the thread.
 - **Quiet by design**: one notification when a task starts, one per question that needs you, one when it's done. Agents post a few lines each and pass the details to each other in their briefs, and they react (👀, ✅) instead of posting acknowledgements. A request sent from the server-wide channel gets a ✅ there, and its thread is where you're pinged.
 - **Evidence or escalation**: agents decide on their own only when the KB or research backs the decision. Otherwise they tag the person most likely to know, with numbered questions and a recommendation. Durable answers are written back into the KB, so the same question never comes twice.
 - **Side threads**: talk to a specialist directly in its channel. Say "approved" and it hands the result back to the Manager.
 - **Voice**: your voice messages are transcribed. Agents answer with real Discord voice messages.
 - **Schedules**: "every weekday at 8, morning brief". Recurring work runs inside the KB's session.
-- **Custom agents**: "@Manager, create an agent for video editing" interviews you, writes the agent, creates its channel and role, and walks you through creating its bot.
+- **A team that changes from Discord**: a new team starts small (Manager, KB Researcher, Web Researcher, Planner). Tell the Manager "turn on the Artist", "remove the Coder", "create a #dashboard channel", or "create an agent for video editing". It does it live, with no restart, once you've approved. The tools check that the approval is your own message. Bot tokens never go through Discord; you put them in `workspace/.env` and the Manager activates the bot.
 - **Restart-safe**: every session restarts by itself and comes back knowing its open threads and their latest messages.
 - **Guarded by default**: each KB's session is confined to its folder, with no access to secrets.
 - **No dependencies**: Node 22 built-ins only.

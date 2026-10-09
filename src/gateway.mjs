@@ -2,7 +2,9 @@
 // may send messages; Specialist bots otherwise only use REST (the Manager's gateway connection is
 // held by the official Discord plugin in each session).
 
-export function gatewayLogin(token, { intents = 1, timeoutMs = 15_000, url = 'wss://gateway.discord.gg/?v=10&encoding=json' } = {}) {
+export function gatewayLogin(token, { intents = 1, timeoutMs = 15_000, url = process.env.CRELIO_DISCORD_GATEWAY ?? 'wss://gateway.discord.gg/?v=10&encoding=json' } = {}) {
+  // Tests run against a fake REST API and have no gateway to log in to.
+  if (url === 'off') return Promise.resolve({ skipped: true })
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url)
     let heartbeat

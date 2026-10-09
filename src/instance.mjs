@@ -2,7 +2,7 @@
 // Every other module asks it the same questions: which KBs, which Agents, which bot speaks
 // for an Agent, which KB a Discord channel belongs to. See CONTEXT.md for the vocabulary.
 
-import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
 export class ConfigError extends Error {
@@ -12,6 +12,8 @@ export class ConfigError extends Error {
 export const ROUTER = 'router'
 export const SPECIALISTS = ['kb-researcher', 'web-researcher', 'brainstormer', 'artist', 'ux-expert', 'marketing', 'lawyer', 'planner', 'coder']
 export const CORE_AGENTS = ['manager', ...SPECIALISTS]
+// A new KB starts with the Manager and these; the other Core agents are enabled when someone needs them.
+export const DEFAULT_TEAM = ['kb-researcher', 'web-researcher', 'planner']
 export const PERMISSION_LEVELS = ['guarded', 'full']
 
 const AGENT_NAMES = {
@@ -96,6 +98,44 @@ export function loadInstance(workspaceDir, { repoDir } = {}) {
   return new Instance({ repoDir: resolve(repoDir ?? join(import.meta.dirname, '..')), workspaceDir: ws, settings, secrets, kbs })
 }
 
+/** What changes when the Workspace is edited: the mtimes of crelio.json, .env and every KB profile. */
+function workspaceStamp(ws) {
+  const stamp = f => { try { return statSync(f).mtimeMs } catch { return 0 } }
+  const kbDir = join(ws, 'kbs')
+  const kbs = existsSync(kbDir) ? readdirSync(kbDir).filter(f => f.endsWith('.json')).sort() : []
+  return [stamp(join(ws, 'crelio.json')), stamp(join(ws, '.env')), ...kbs.map(f => `${f}:${stamp(join(kbDir, f))}`)].join('|')
+}
+
+/**
+ * An Instance that follows the Workspace: every access goes to the latest version, re-read when a file
+ * changed (checked at most once a second). Long-running processes (the MCP server) use it so an
+ * administration change — an agent enabled, a channel created — applies without restarting the session.
+ * A broken edit keeps the last good version.
+ */
+export function liveInstance(workspaceDir, { repoDir } = {}) {
+  const ws = resolve(workspaceDir)
+  let current = loadInstance(ws, { repoDir })
+  let stamp = workspaceStamp(ws)
+  let checkedAt = Date.now()
+  const latest = (force = false) => {
+    if (!force && Date.now() - checkedAt < 1000) return current
+    checkedAt = Date.now()
+    const now = workspaceStamp(ws)
+    if (force || now !== stamp) {
+      try { current = loadInstance(ws, { repoDir }); stamp = now } catch {}
+    }
+    return current
+  }
+  return new Proxy({}, {
+    get(_, key) {
+      if (key === 'reload') return () => latest(true) // after this process wrote the Workspace itself
+      const inst = latest()
+      const value = inst[key]
+      return typeof value === 'function' ? value.bind(inst) : value
+    },
+  })
+}
+
 export class Instance {
   constructor({ repoDir, workspaceDir, settings, secrets, kbs }) {
     this.repoDir = repoDir
@@ -121,15 +161,28 @@ export class Instance {
     return kb
   }
 
-  /** Agents on a KB team: Core agents (minus disabled) + Workspace-wide and KB Custom agents. */
+  /** Agents a KB team may enable: the Core Specialists + Workspace-wide and KB Custom agents. */
+  availableAgents(kbId) {
+    const kb = kbId ? this.kb(kbId) : null
+    return [...SPECIALISTS, ...(this.settings.agents?.custom ?? []), ...(kb?.agents?.custom ?? [])].filter((a, i, all) => all.indexOf(a) === i)
+  }
+
+  /**
+   * Agents on a KB team: the Manager + the enabled ones. A profile lists them in agents.enabled; older
+   * profiles have agents.disabled instead (everything available minus those).
+   */
   agentsFor(kbId) {
     const kb = kbId ? this.kb(kbId) : null
-    const disabled = new Set(kb?.agents?.disabled ?? [])
-    return [
-      ...CORE_AGENTS.filter(a => a === 'manager' || !disabled.has(a)),
-      ...(this.settings.agents?.custom ?? []),
-      ...(kb?.agents?.custom ?? []),
-    ].filter((a, i, all) => all.indexOf(a) === i)
+    const available = this.availableAgents(kbId)
+    const enabled = Array.isArray(kb?.agents?.enabled)
+      ? new Set(kb.agents.enabled)
+      : new Set(available.filter(a => !(kb?.agents?.disabled ?? []).includes(a)))
+    return ['manager', ...available.filter(a => enabled.has(a))]
+  }
+
+  /** People whose messages count as approval for administration: the server owner and listed admins. */
+  get owners() {
+    return [this.settings.server?.owner_id, ...(this.settings.admins ?? [])].filter(Boolean)
   }
 
   /** The Agent bot that speaks for an Agent in a KB (a KB profile may override the shared bot). */
@@ -154,7 +207,8 @@ export class Instance {
   channelsOf(sessionId) {
     if (sessionId === ROUTER) return [this.globalGeneralId].filter(Boolean)
     const d = this.kb(sessionId).discord ?? {}
-    return [d.general_id, ...Object.values(d.agents ?? {})].filter(Boolean)
+    const agents = this.agentsFor(sessionId)
+    return [d.general_id, ...Object.entries(d.agents ?? {}).filter(([a]) => agents.includes(a)).map(([, c]) => c), ...Object.values(d.channels ?? {})].filter(Boolean)
   }
 
   /** Which session, KB, role and Agent a channel (not a thread) belongs to; null if outside the Instance. */
@@ -164,7 +218,11 @@ export class Instance {
       const d = kb.discord ?? {}
       if (channelId === d.general_id) return { session: id, kb: id, role: 'general', agent: 'manager' }
       for (const [agent, ch] of Object.entries(d.agents ?? {})) {
-        if (ch === channelId) return { session: id, kb: id, role: 'agent', agent }
+        if (ch === channelId && this.agentsFor(id).includes(agent)) return { session: id, kb: id, role: 'agent', agent }
+      }
+      // Other channels the owner had the team create in its category: the Manager serves them.
+      for (const [name, ch] of Object.entries(d.channels ?? {})) {
+        if (ch === channelId) return { session: id, kb: id, role: 'channel', agent: 'manager', name }
       }
     }
     return null

@@ -35,13 +35,13 @@ test('a KB session runs in the KB folder as the Manager, behind the official Dis
   assert.ok(s.args.includes(join(s.stateDir, 'discord', 'inbox')), 'inbox is an added dir')
 })
 
-test('the session environment points the plugin at its own state, in static mode, with the Manager token', () => {
+test('the session environment points the plugin at its own state, with the Manager token', () => {
   const { ws } = makeWorkspace({ kbs: ['alpha'] })
   const instance = loadInstance(ws, { repoDir: REPO })
   const s = buildSession(instance, 'alpha', { parentEnv })
 
   assert.equal(s.env.DISCORD_STATE_DIR, join(s.stateDir, 'discord'))
-  assert.equal(s.env.DISCORD_ACCESS_MODE, 'static')
+  assert.equal(s.env.DISCORD_ACCESS_MODE, undefined, 'the plugin re-reads access.json on every message, so team changes apply live')
   assert.equal(s.env.DISCORD_BOT_TOKEN, 'token-DISCORD_TOKEN_MANAGER')
   assert.equal(s.env.CRELIO_SESSION, 'alpha')
   assert.equal(s.env.CRELIO_WORKSPACE, ws)

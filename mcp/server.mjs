@@ -2,7 +2,7 @@
 // Crelio MCP server (stdio, JSON-RPC, no dependencies). One per session, started by Claude Code
 // from the session's generated MCP config. Tools: see TOOLS below and src/tools.mjs.
 
-import { loadInstance, ROUTER } from '../src/instance.mjs'
+import { liveInstance, ROUTER } from '../src/instance.mjs'
 import { createTools, ToolError } from '../src/tools.mjs'
 
 const SESSION = process.env.CRELIO_SESSION
@@ -10,6 +10,11 @@ const WORKSPACE = process.env.CRELIO_WORKSPACE
 
 const agentProp = { type: 'string', description: 'Agent id that speaks, e.g. "manager", "kb-researcher", "coder" — always yourself' }
 const chatProp = { type: 'string', description: 'Discord channel or thread ID (chat_id from the <channel> tag, or a thread_id)' }
+const kbProp = { type: 'string', description: 'Router only: the KB id (a KB session administers its own team)' }
+const approvalProps = {
+  approval_chat_id: { type: 'string', description: 'Where the owner approved: the channel or thread id of their message' },
+  approval_message_id: { type: 'string', description: 'The owner\'s message asking for this change or agreeing to it (the tool checks it is theirs and recent)' },
+}
 
 const TOOLS = [
   {
@@ -111,7 +116,7 @@ const TOOLS = [
   },
   {
     name: 'restart_session',
-    description: 'Restart a session through the CrelioBot launcher (it comes back within seconds with its open threads). A KB session restarts itself (e.g. to load a new agent); the Router may restart any KB session ("kb") or itself. Post what you are doing first.',
+    description: 'Restart a session through the CrelioBot launcher (it comes back within seconds with its open threads). Team changes do not need it (they apply live); use it when a session is stuck. A KB session restarts itself; the Router may restart any KB session ("kb") or itself.',
     inputSchema: { type: 'object', properties: { kb: { type: 'string', description: 'Router only: the KB id to restart' } } },
   },
   {
@@ -130,15 +135,47 @@ const TOOLS = [
   },
   {
     name: 'provision_agent',
-    description: 'Agent creator: write a Custom agent\'s definition (markdown with frontmatter name/description/model/skills), register it and create its Agent channel and role. From a KB session: for this KB (definition saved in the KB). From the Router: for every KB (definition saved in the Workspace). Returns whether its bot is ready and what comes next (bot creation by the owner, then restart_session).',
+    description: 'Agent creator: write a Custom agent\'s definition (markdown with frontmatter name/description/model/skills), register it, enable it and create its Agent channel and role — live, no restart. From a KB session: for this KB (definition saved in the KB). From the Router: for every KB (definition saved in the Workspace). Needs the owner\'s approval. Returns how to dispatch it and whether its bot is ready (if not: the steps for the owner, then bot_register).',
     inputSchema: {
       type: 'object',
       properties: {
         agent: { type: 'string', description: 'Agent id, lowercase-with-dashes' },
         definition: { type: 'string', description: 'Full agent definition file content (omit to only re-create the channel and role)' },
+        ...approvalProps,
       },
-      required: ['agent'],
+      required: ['agent', 'approval_chat_id', 'approval_message_id'],
     },
+  },
+  {
+    name: 'agent_enable',
+    description: 'Turn an agent on for a team: it joins the roster, gets its Agent channel and role (created if needed), and the session hears that channel at once — no restart. Works for Core agents (Artist, Lawyer, Coder…) and Custom agents. Needs the owner\'s approval. Returns whether its bot is ready, and the steps when it is not.',
+    inputSchema: { type: 'object', properties: { agent: { type: 'string' }, kb: kbProp, ...approvalProps }, required: ['agent', 'approval_chat_id', 'approval_message_id'] },
+  },
+  {
+    name: 'agent_disable',
+    description: 'Turn an agent off for a team. By default also deletes its Agent channel and role in this KB (irreversible — say so when you ask); remove_channel: false keeps them. Its bot stays (other teams may use it). Needs the owner\'s approval.',
+    inputSchema: { type: 'object', properties: { agent: { type: 'string' }, kb: kbProp, remove_channel: { type: 'boolean' }, ...approvalProps }, required: ['agent', 'approval_chat_id', 'approval_message_id'] },
+  },
+  {
+    name: 'discord_admin',
+    description: 'Create or delete a channel or a role in this team\'s Discord category. create_channel (name; voice: true for a voice channel) — the Manager serves the new channel at once. delete_channel (id) — only channels in this category, not the General or an Agent channel (use agent_disable). create_role (name) / delete_role (id) — only roles this team created. Needs the owner\'s approval; deletions are irreversible.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['create_channel', 'delete_channel', 'create_role', 'delete_role'] },
+        name: { type: 'string' },
+        id: { type: 'string', description: 'Channel or role id (delete_*)' },
+        voice: { type: 'boolean' },
+        kb: kbProp,
+        ...approvalProps,
+      },
+      required: ['action', 'approval_chat_id', 'approval_message_id'],
+    },
+  },
+  {
+    name: 'bot_register',
+    description: 'Activate an agent\'s Discord bot once its token is in workspace/.env (the owner puts it there on the PC — never in Discord): checks it, activates it, records it, sets its name in the server. Returns the invite link when the bot is not in the server yet. Without a token, returns the steps to give the owner. Needs the owner\'s approval. No restart needed.',
+    inputSchema: { type: 'object', properties: { agent: { type: 'string' }, ...approvalProps }, required: ['agent'] },
   },
   {
     name: 'route',
@@ -173,7 +210,8 @@ let tools
 let startupError
 try {
   if (!SESSION || !WORKSPACE) throw new Error('CRELIO_SESSION and CRELIO_WORKSPACE must be set (the launcher sets them)')
-  const instance = loadInstance(WORKSPACE, { repoDir: process.env.CRELIO_HOME })
+  // Live: an administration change (from this session, the Router or the owner's editor) applies without a restart.
+  const instance = liveInstance(WORKSPACE, { repoDir: process.env.CRELIO_HOME })
   tools = createTools({ instance, sessionId: SESSION })
 } catch (e) {
   startupError = e.message

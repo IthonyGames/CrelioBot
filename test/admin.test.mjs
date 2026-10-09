@@ -20,8 +20,10 @@ async function setup({ kbs = ['alpha', 'beta'], profiles } = {}) {
   }
   const bots = Object.fromEntries(Object.entries(instance.settings.bots).map(([k, b]) => [`token-${b.token_env}`, { id: b.user_id, username: k, bot: true }]))
   const fake = await startFakeDiscord({ guildId: instance.guildId, channels, bots })
-  const env = id => ({ CRELIO_SESSION: id, CRELIO_WORKSPACE: ws, CRELIO_HOME: REPO, CRELIO_DISCORD_API: fake.api })
-  return { ws, instance, fake, env }
+  const env = id => ({ CRELIO_SESSION: id, CRELIO_WORKSPACE: ws, CRELIO_HOME: REPO, CRELIO_DISCORD_API: fake.api, CRELIO_DISCORD_GATEWAY: 'off' })
+  // The owner's message that asks for (or agrees to) an administration change.
+  const approve = (chat, text = 'yes, do it') => ({ approval_chat_id: chat, approval_message_id: fake.addMessage(chat, { content: text, author: { id: instance.settings.server.owner_id, username: 'owner' } }).id })
+  return { ws, instance, fake, env, approve }
 }
 
 const names = async mcp => (await mcp.request('tools/list')).result.tools.map(t => t.name)
@@ -111,14 +113,15 @@ test('Schedules are saved in the KB profile, validated, and removable', async ()
 })
 
 test('provision_agent registers a Custom agent and creates its channel and role, once', async () => {
-  const { ws, instance, fake, env } = await setup()
+  const { ws, instance, fake, env, approve } = await setup()
+  const general = instance.kb('alpha').discord.general_id
   const kb = startMcp(env('alpha'))
-  const first = await kb.call('provision_agent', { agent: 'video-editor' })
-  const again = await kb.call('provision_agent', { agent: 'video-editor' })
+  const first = await kb.call('provision_agent', { agent: 'video-editor', ...approve(general) })
+  const again = await kb.call('provision_agent', { agent: 'video-editor', ...approve(general) })
   await kb.close(); await fake.close()
   assert.equal(first.isError, false, first.text)
   assert.equal(first.data.bot_ready, false)
-  assert.match(first.data.next, /crelio bot add video-editor/)
+  assert.match(first.data.next, /DISCORD_TOKEN_VIDEO_EDITOR.*bot_register\(agent: "video-editor"\)/s)
   assert.equal(again.data.channel_id, first.data.channel_id)
   assert.equal(again.data.role_id, first.data.role_id)
   const created = fake.state.requests.filter(r => r.method === 'POST' && /\/guilds\/\d+\/(channels|roles)$/.test(r.path))
@@ -133,15 +136,16 @@ test('provision_agent registers a Custom agent and creates its channel and role,
 })
 
 test('provision_agent writes the definition into the KB, or into the Workspace for every KB from the Router', async () => {
-  const { ws, instance, fake, env } = await setup()
+  const { ws, instance, fake, env, approve } = await setup()
+  const general = instance.kb('alpha').discord.general_id
   const def = id => `---\nname: ${id}\ndescription: Video editor on a CrelioBot team — cuts and captions videos.\nmodel: sonnet\n---\n\nYou are the **Video Editor**.\n`
   const kb = startMcp(env('alpha'))
-  const bad = await kb.call('provision_agent', { agent: 'video-editor', definition: 'no frontmatter' })
-  const core = await kb.call('provision_agent', { agent: 'coder', definition: def('coder') })
-  const ok = await kb.call('provision_agent', { agent: 'video-editor', definition: def('video-editor') })
+  const bad = await kb.call('provision_agent', { agent: 'video-editor', definition: 'no frontmatter', ...approve(general) })
+  const core = await kb.call('provision_agent', { agent: 'coder', definition: def('coder'), ...approve(general) })
+  const ok = await kb.call('provision_agent', { agent: 'video-editor', definition: def('video-editor'), ...approve(general) })
   await kb.close()
   const router = startMcp(env('router'))
-  const shared = await router.call('provision_agent', { agent: 'translator', definition: def('translator') })
+  const shared = await router.call('provision_agent', { agent: 'translator', definition: def('translator'), ...approve(instance.globalGeneralId) })
   await router.close(); await fake.close()
   assert.match(bad.text, /frontmatter/)
   assert.match(core.text, /Core agent/)

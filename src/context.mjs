@@ -22,7 +22,7 @@ export async function sessionContext({ instance, sessionId, tools }) {
       '# CrelioBot — Router session',
       `You are the Router of this Instance. Global General: ${instance.globalGeneralId}. Owner: <@${team.owner_id}>. Default language: ${team.language}.`,
       '', '## KB teams (route with mcp__crelio__route, then SendMessage to the session name)',
-      ...team.kbs.map(k => `- **${k.name}** (id \`${k.id}\`, ${k.language ?? team.language}) — General ${k.general_id} — session \`${k.session_name}\``),
+      ...team.kbs.map(k => `- **${k.name}** (id \`${k.id}\`, ${k.language ?? team.language}) — General ${k.general_id} — session \`${k.session_name}\` — agents: ${k.agents.join(', ')}`),
     )
   } else {
     const kb = team.kb
@@ -33,6 +33,8 @@ export async function sessionContext({ instance, sessionId, tools }) {
       '', '## Channels and team (agent — bot — role — channel)',
       `- KB General: ${team.kb_general_id}`,
       ...team.agents.map(a => `- ${a.name} (\`${a.id}\`) — bot ${a.bot_user_id ?? '—'} — mention ${a.mention} — channel ${a.channel_id ?? '—'}${a.id === 'manager' || a.bot_user_id ? '' : ' — ⚠ no bot yet'}`),
+      ...Object.entries(team.channels ?? {}).map(([name, id]) => `- #${name}: ${id} (you serve it)`),
+      `Off, can be enabled on request (agent_enable): ${team.available.length ? team.available.map(a => `\`${a}\``).join(', ') : 'none'}. This roster is from the session start — after a team change, \`team\` is the truth.`,
     )
     const schedules = instance.kb(sessionId).schedules ?? []
     if (schedules.length) {

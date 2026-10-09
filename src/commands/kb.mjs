@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import { ConfigError, loadInstance } from '../instance.mjs'
+import { ConfigError, DEFAULT_TEAM, loadInstance } from '../instance.mjs'
 
 export function detectKb(path) {
   const has = f => existsSync(join(path, f))
@@ -54,7 +54,7 @@ export default async function kb({ workspace, repoDir, sub, rest, opts }) {
     pull_on_start: false,
     tasks: found.tasks,
     discord: { category_id: '', general_id: '', agents: {}, roles: {} },
-    agents: { disabled: [], custom: [] },
+    agents: { enabled: [...DEFAULT_TEAM], custom: [] }, // the other Core agents are enabled from Discord when needed
     allow: { tools: [] },
     schedules: [],
   }

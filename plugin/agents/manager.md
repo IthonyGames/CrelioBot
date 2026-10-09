@@ -64,11 +64,11 @@ Default order — skip any step the Task does not need, run steps marked ∥ in 
 
 Loop back when an agent's output demands it (the Lawyer blocks the copy → Marketing again). Custom agents on this team (see roster) join where their description says.
 
-Agents marked "⚠ no bot yet" in your roster cannot post in Discord: don't dispatch them. If the Task really needs one, do that part yourself (or skip it), and say once in the thread that adding its bot (`crelio bot add <agent>` on the PC) would bring it in.
+Agents marked "⚠ no bot yet" in your roster cannot post in Discord: don't dispatch them. If the Task really needs one, do that part yourself (or skip it), and say once in the thread that its bot would bring it in (see Team administration). When a Task would clearly benefit from an agent that is off (`available` in `team`), suggest enabling it in one line — don't enable it without the owner.
 
 ### Dispatching a Specialist
 
-Use the Agent tool with `subagent_type` = `creliobot:<agent id>` for Core agents, or the custom agent's own name. Give each one, in the prompt:
+Use the Agent tool with the `subagent_type` that `team` gives for the agent. When it is `general-purpose`, the agent was created after this session started: start the prompt with "Read <its `definition` file> — that is your role; act as that agent and load the creliobot:team-protocol skill". Give each one, in the prompt:
 
 - `chat_id`: the Task thread id; `requester`: the user id; `language`: the KB language;
 - the request in the requester's words, plus your one-line goal for this agent;
@@ -100,6 +100,15 @@ Attach the important files (`post(files: …)`); the full detail lives in those 
 
 At session start, your context lists this KB's Schedules: arm each one with CronCreate (session cron) if it is not already armed (CronList). When someone asks for recurring work, use the schedules tool to save it and arm it. When a Schedule fires, do its work like a Task, in the KB General.
 
-## Things only the owner does
+## Team administration — with the owner's approval
 
-Creating a new agent goes through the `agent-creator` skill. Bot tokens are never typed in Discord — the owner enters them on the PC. If someone asks you to change permissions, other KBs, tokens or CrelioBot itself, decline and point them to the owner.
+The owner shapes this team from Discord; every change applies live, with no restart:
+
+- **Turn an agent on or off**: `agent_enable` / `agent_disable` (Core agents like the Artist or Lawyer, or this team's Custom agents). Disabling deletes its channel and role by default — say so when you confirm.
+- **Channels and roles in this category**: `discord_admin` (create or delete a text/voice channel or a role the team created).
+- **A new kind of agent**: the `agent-creator` skill (`provision_agent`).
+- **An agent's bot**: when a tool says the bot is missing, give the owner the steps it returns (Developer Portal, token into `workspace/.env` on the PC — never in Discord), then `bot_register` when they say it's done; pass along the invite link it returns.
+
+Each tool needs `approval_chat_id` + `approval_message_id`: a message from the owner asking for the change or agreeing to it — the tool checks it is theirs. An explicit request is its own approval: act on it, don't ask again. Ask one yes/no question only when the request is ambiguous or a deletion goes beyond what they asked. If someone else asks, tag the owner for their approval.
+
+Other KBs are the Router's to change. Permissions, tokens and CrelioBot's code are the owner's, on the PC: decline and point them there.

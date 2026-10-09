@@ -2,11 +2,13 @@
 // Every tool acts only inside its session's scope: a KB session's category (KB General, Agent
 // channels and their threads); the Router's Global General.
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { agentName, loadInstance, ROUTER, updateKbProfile, updateSettings, CORE_AGENTS } from './instance.mjs'
 import { isSessionProcess, killSessionProcess } from './launcher.mjs'
-import { provisioner } from './provision.mjs'
+import { channelName, provisioner } from './provision.mjs'
+import { writeAccess } from './runtime.mjs'
+import { PORTAL_STEPS, registerBot, tokenEnvFor } from './bots.mjs'
 import { discordClient, FLAGS, MAX_FILE_BYTES, SNOWFLAKE, THREAD_TYPES } from './discord.mjs'
 import { openRegistry, THREAD_FIELDS } from './registry.mjs'
 import { splitMessage } from './split.mjs'
@@ -43,6 +45,10 @@ export function createTools({
   const isRouter = sessionId === ROUTER
   const kbId = isRouter ? null : sessionId
   const channelCache = new Map()
+  // What Claude Code loaded at session start (this runs when the session's MCP server starts).
+  const kbAgentsWatched = !!kbId && existsSync(join(instance.kb(kbId).path, '.claude', 'agents'))
+  const wsAgentsDir = join(instance.workspaceDir, 'plugin', 'agents')
+  const wsAgentsAtStart = new Set(existsSync(join(instance.workspaceDir, 'plugin', '.claude-plugin', 'plugin.json')) && existsSync(wsAgentsDir) ? readdirSync(wsAgentsDir) : [])
 
   const agents = () => (isRouter ? ['manager'] : instance.agentsFor(kbId))
   function botClient(agent) {
@@ -195,7 +201,8 @@ export function createTools({
     const rows = []
     for (const [id, th] of live) {
       const where = instance.locate(th.parent_id)
-      rows.push({ thread_id: id, name: th.name, channel: where.role === 'general' ? 'general' : `#${where.agent}`, ...registry.get(id), status: 'open', last_message_id: th.last_message_id })
+      const channel = where.role === 'general' ? 'general' : `#${where.role === 'agent' ? where.agent : where.name}`
+      rows.push({ thread_id: id, name: th.name, channel, ...registry.get(id), status: 'open', last_message_id: th.last_message_id })
     }
     if (include_closed) {
       for (const r of registry.list()) if (!live.has(r.thread_id)) rows.push({ ...r, status: r.status === 'open' ? 'archived' : r.status })
@@ -417,8 +424,12 @@ export function createTools({
   }
 
   // ------------------------------------------------------------ KB administration
+  /** The Workspace as it is now on disk — after this process (or another session) changed it. */
+  function fresh() {
+    return instance.reload?.() ?? loadInstance(instance.workspaceDir, { repoDir: instance.repoDir })
+  }
   function freshKb() {
-    return loadInstance(instance.workspaceDir, { repoDir: instance.repoDir }).kb(kbId)
+    return fresh().kb(kbId)
   }
 
   async function schedules({ action = 'list', id, cron, prompt }) {
@@ -447,13 +458,14 @@ export function createTools({
    * agents for every KB (definition in <Workspace>/plugin/agents/, channel + role in every category).
    * The tool writes the definition itself: .claude/ edits are protected in guarded sessions.
    */
-  async function provision_agent({ agent, definition }) {
+  async function provision_agent({ agent, definition, approval_chat_id, approval_message_id }) {
     const id = String(need(agent, 'agent')).toLowerCase()
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id) || id === 'manager' || id === ROUTER) throw new ToolError('agent must be a lowercase id with letters, digits and dashes (not manager/router)')
     const isCore = CORE_AGENTS.includes(id)
+    if (isCore && definition !== undefined) throw new ToolError(`"${id}" is a Core agent — pick another id for a Custom agent (a Core agent is turned on with agent_enable)`)
+    const by = await approved({ approval_chat_id, approval_message_id }, 'provision_agent')
 
     if (definition !== undefined) {
-      if (isCore) throw new ToolError(`"${id}" is a Core agent — pick another id for a Custom agent`)
       const text = String(definition)
       const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
       if (!front || !new RegExp(`^name:\\s*${id}\\s*$`, 'm').test(front[1]) || !/^description:\s*\S/m.test(front[1])) {
@@ -477,29 +489,236 @@ export function createTools({
       if (isRouter) updateSettings(instance.workspaceDir, s => { s.agents = { ...s.agents, custom: add(s.agents?.custom) } })
       else updateKbProfile(instance.workspaceDir, kbId, k => { k.agents = { ...k.agents, custom: add(k.agents?.custom) } })
     }
-
-    const fresh = loadInstance(instance.workspaceDir, { repoDir: instance.repoDir })
-    const p = provisioner({ client: manager(), guildId: instance.guildId })
-    const channels = {}
-    for (const kb of isRouter ? [...fresh.kbs.values()] : [fresh.kb(kbId)]) {
-      const d = kb.discord ?? {}
-      if (!d.category_id) { channels[kb.id] = 'no Discord category yet — crelio discord provision'; continue }
-      const r = await p.agentChannelAndRole({ kbName: kb.name ?? kb.id, categoryId: d.category_id, agent: id, channelId: d.agents?.[id], roleId: d.roles?.[id] })
-      updateKbProfile(instance.workspaceDir, kb.id, k => {
-        k.discord = { ...k.discord, agents: { ...k.discord?.agents, [id]: r.channel_id }, roles: { ...k.discord?.roles, [id]: r.role_id } }
-      })
-      channels[kb.id] = { channel_id: r.channel_id, role_id: r.role_id }
+    // A team that lists its agents gets the new one enabled (from the Router: every team).
+    for (const kb of fresh().kbs.values()) {
+      if (!isCore && (isRouter || kb.id === kbId) && Array.isArray(kb.agents?.enabled)) {
+        updateKbProfile(instance.workspaceDir, kb.id, k => { k.agents.enabled = [...new Set([...k.agents.enabled, id])] })
+      }
     }
-    const ready = !!fresh.botFor(kbId, id)?.token
-    const restart = isRouter ? 'restart_session for each KB' : 'restart_session'
+
+    const channels = {}
+    for (const kb of isRouter ? [...fresh().kbs.values()] : [fresh().kb(kbId)]) {
+      const r = await agentChannel(kb.id, id)
+      channels[kb.id] = r.error ?? { channel_id: r.channel_id, role_id: r.role_id }
+      if (!r.error) writeAccess(fresh(), kb.id)
+    }
+    const bot = botStatus(kbId, id)
     return {
       agent: id,
       ...(isRouter ? { channels } : channels[kbId]),
-      bot_ready: ready,
-      next: ready
-        ? `Call ${restart} so the sessions load the agent and listen to its channel.`
-        : `The agent needs its own bot application: the owner creates it in the Discord Developer Portal and runs "crelio bot add ${id}" on the PC. Then call ${restart}.`,
+      bot_ready: bot.ready,
+      ...subagentType(kbId, id),
+      approved_by: by,
+      next: bot.ready
+        ? 'Ready now — no restart needed. Dispatch it once to introduce itself in its channel.'
+        : bot.next,
     }
+  }
+
+  // ------------------------------------------------------------ Team administration
+  // Every change needs the owner's approval: a message from the owner (or a listed admin) in this
+  // session's channels, at most a day old — usually the request itself ("enable the Artist"), or the
+  // owner's answer to a yes/no question. The tool checks it, so no agent administers on its own.
+  const APPROVAL_MAX_AGE_MS = 24 * 3600_000
+
+  async function approved({ approval_chat_id, approval_message_id }, action) {
+    if (!approval_chat_id || !approval_message_id) {
+      throw new ToolError(`${action} needs the owner's approval: pass approval_chat_id and approval_message_id — the owner's message asking for it or agreeing to it`)
+    }
+    if (!instance.owners.length) throw new ToolError('no owner is recorded for this Instance (crelio.json → server.owner_id) — the owner sets it with "crelio discord use"')
+    const t = await target(approval_chat_id)
+    const msg = await manager().get(`/channels/${t.id}/messages/${snowflake(approval_message_id, 'approval_message_id')}`)
+    if (!instance.owners.includes(msg.author?.id)) throw new ToolError(`message ${msg.id} is not from the owner — only the owner${instance.settings.admins?.length ? ' or an admin' : ''} can approve team changes; ask them`)
+    if (Date.now() - Date.parse(msg.timestamp) > APPROVAL_MAX_AGE_MS) throw new ToolError('that approval is more than a day old — ask the owner again')
+    return msg.author.id
+  }
+
+  /** The KB an administration tool acts on: a KB session's own team; the Router names it. */
+  function adminKb(kb) {
+    if (isRouter) return instance.kb(need(kb, 'kb')).id
+    if (kb && kb !== kbId) throw new ToolError(`a KB session administers only its own team (${kbId}) — ask the Router in the Global General for another KB`)
+    return kbId
+  }
+  const kbManager = id => clientFor(instance.requireToken(id, 'manager'))
+  const agentId = agent => {
+    const id = String(need(agent, 'agent')).toLowerCase()
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id) || id === ROUTER) throw new ToolError('agent must be a lowercase id with letters, digits and dashes')
+    return id
+  }
+  /** Enabled Specialists of a KB as an explicit list (migrates an older "disabled" profile). */
+  const enabledList = (inst, id) => inst.agentsFor(id).filter(a => a !== 'manager')
+
+  /** Creates (or finds) an agent's channel and role in a KB category and records them. */
+  async function agentChannel(id, agent) {
+    const kb = fresh().kb(id)
+    const d = kb.discord ?? {}
+    if (!d.category_id) return { error: 'no Discord category yet — the owner runs "crelio discord provision"' }
+    const p = provisioner({ client: kbManager(id), guildId: instance.guildId })
+    const r = await p.agentChannelAndRole({ kbName: kb.name ?? kb.id, categoryId: d.category_id, agent, channelId: d.agents?.[agent], roleId: d.roles?.[agent] })
+    updateKbProfile(instance.workspaceDir, id, k => {
+      k.discord = { ...k.discord, agents: { ...k.discord?.agents, [agent]: r.channel_id }, roles: { ...k.discord?.roles, [agent]: r.role_id } }
+    })
+    return r
+  }
+
+  /** Whether an agent can post, and what the owner does next when it can't. */
+  function botStatus(id, agent) {
+    const inst = fresh()
+    const bot = inst.botFor(id, agent)
+    const tokenEnv = bot?.token_env ?? tokenEnvFor(agent)
+    if (bot?.token && bot.user_id) return { ready: true }
+    if (inst.secret(tokenEnv)) return { ready: false, next: `Its token is in workspace/.env: call bot_register(agent: "${agent}") to activate it.` }
+    return {
+      ready: false,
+      next: `It needs its own Discord bot. Give the owner these steps (Developer Portal):${PORTAL_STEPS(agent)}\nThe token goes into workspace/.env on the PC (${tokenEnv}=…), never into Discord. When the owner says it is done, call bot_register(agent: "${agent}").`,
+    }
+  }
+
+  async function agent_enable({ agent, kb, approval_chat_id, approval_message_id }) {
+    const id = adminKb(kb)
+    const a = agentId(agent)
+    if (a === 'manager') throw new ToolError('the Manager is always on')
+    const inst = fresh()
+    if (!inst.availableAgents(id).includes(a)) {
+      throw new ToolError(`"${a}" is not an agent of this Instance — available: ${inst.availableAgents(id).join(', ')}. A new kind of agent is made with the agent-creator skill (provision_agent).`)
+    }
+    const by = await approved({ approval_chat_id, approval_message_id }, 'agent_enable')
+    const was = inst.agentsFor(id).includes(a)
+    updateKbProfile(instance.workspaceDir, id, k => {
+      k.agents = { ...k.agents, enabled: [...new Set([...enabledList(inst, id), a])] }
+      delete k.agents.disabled
+    })
+    const r = await agentChannel(id, a)
+    if (r.error) throw new ToolError(r.error)
+    writeAccess(fresh(), id)
+    channelCache.clear()
+    const bot = botStatus(id, a)
+    return {
+      kb: id, agent: a, enabled: true, already_enabled: was, channel_id: r.channel_id, role_id: r.role_id, approved_by: by,
+      bot_ready: bot.ready,
+      next: bot.ready ? 'Active now — no restart. The session already hears its channel.' : bot.next,
+    }
+  }
+
+  async function agent_disable({ agent, kb, remove_channel = true, approval_chat_id, approval_message_id }) {
+    const id = adminKb(kb)
+    const a = agentId(agent)
+    if (a === 'manager') throw new ToolError('the Manager cannot be disabled')
+    const inst = fresh()
+    if (!inst.agentsFor(id).includes(a)) return { kb: id, agent: a, enabled: false, note: 'already off' }
+    const by = await approved({ approval_chat_id, approval_message_id }, 'agent_disable')
+    updateKbProfile(instance.workspaceDir, id, k => {
+      k.agents = { ...k.agents, enabled: enabledList(inst, id).filter(x => x !== a) }
+      delete k.agents.disabled
+    })
+    const removed = {}
+    if (remove_channel) {
+      const d = inst.kb(id).discord ?? {}
+      const client = kbManager(id)
+      const reason = { reason: `CrelioBot: ${agentName(a)} disabled in ${inst.kb(id).name ?? id}` }
+      const gone = e => e.status === 404 || e.code === 10003 || e.code === 10011
+      if (d.agents?.[a]) { await client.delete(`/channels/${d.agents[a]}`, reason).catch(e => { if (!gone(e)) throw e }); removed.channel_id = d.agents[a] }
+      if (d.roles?.[a]) { await client.delete(`/guilds/${instance.guildId}/roles/${d.roles[a]}`, reason).catch(e => { if (!gone(e)) throw e }); removed.role_id = d.roles[a] }
+      updateKbProfile(instance.workspaceDir, id, k => {
+        if (k.discord?.agents) delete k.discord.agents[a]
+        if (k.discord?.roles) delete k.discord.roles[a]
+      })
+    }
+    writeAccess(fresh(), id)
+    channelCache.clear()
+    return { kb: id, agent: a, enabled: false, removed, kept: 'its bot (other teams may use it) — agent_enable brings it back', approved_by: by }
+  }
+
+  async function discord_admin({ action, kb, name, id: objectId, voice, approval_chat_id, approval_message_id }) {
+    const k = adminKb(kb)
+    const inst = fresh()
+    const profile = inst.kb(k)
+    const d = profile.discord ?? {}
+    if (!d.category_id) throw new ToolError('this KB has no Discord category yet — the owner runs "crelio discord provision"')
+    const client = kbManager(k)
+    const reason = { reason: `CrelioBot (${profile.name ?? k})` }
+    const p = provisioner({ client, guildId: instance.guildId })
+    const approval = () => approved({ approval_chat_id, approval_message_id }, `discord_admin ${action}`)
+
+    if (action === 'create_channel') {
+      const chName = channelName(need(name, 'name'))
+      const by = await approval()
+      const ch = await p.ensureChannel({ name: chName, type: voice ? 2 : 0, parent_id: d.category_id })
+      if (ch.id === d.general_id || Object.values(d.agents ?? {}).includes(ch.id)) throw new ToolError(`#${chName} already exists as this team's ${ch.id === d.general_id ? 'General' : 'Agent channel'} — pick another name`)
+      updateKbProfile(instance.workspaceDir, k, x => { x.discord = { ...x.discord, channels: { ...x.discord?.channels, [chName]: ch.id } } })
+      writeAccess(fresh(), k)
+      return { kb: k, created: ch.created, channel_id: ch.id, name: chName, voice: !!voice, approved_by: by, note: 'The Manager serves it (it hears messages there now).' }
+    }
+    if (action === 'delete_channel') {
+      const cid = snowflake(objectId, 'id')
+      if (cid === d.general_id) throw new ToolError('the KB General cannot be deleted')
+      const agentOf = Object.entries(d.agents ?? {}).find(([, c]) => c === cid)?.[0]
+      if (agentOf) throw new ToolError(`that is the ${agentName(agentOf)}'s channel — use agent_disable(agent: "${agentOf}")`)
+      const ch = await client.get(`/channels/${cid}`)
+      if (ch.parent_id !== d.category_id) throw new ToolError(`channel ${cid} is not in this KB's category — a team only deletes its own channels`)
+      const by = await approval()
+      await client.delete(`/channels/${cid}`, reason)
+      updateKbProfile(instance.workspaceDir, k, x => {
+        for (const [n, c] of Object.entries(x.discord?.channels ?? {})) if (c === cid) delete x.discord.channels[n]
+      })
+      writeAccess(fresh(), k)
+      channelCache.delete(cid)
+      return { kb: k, deleted_channel: cid, name: ch.name, approved_by: by }
+    }
+    if (action === 'create_role') {
+      const roleName = String(need(name, 'name')).trim().slice(0, 100)
+      const by = await approval()
+      const role = await p.ensureRole({ name: roleName })
+      updateKbProfile(instance.workspaceDir, k, x => { x.discord = { ...x.discord, extra_roles: { ...x.discord?.extra_roles, [roleName]: role.id } } })
+      return { kb: k, created: role.created, role_id: role.id, name: roleName, approved_by: by }
+    }
+    if (action === 'delete_role') {
+      const rid = snowflake(objectId, 'id')
+      const agentOf = Object.entries(d.roles ?? {}).find(([, r]) => r === rid)?.[0]
+      if (agentOf) throw new ToolError(agentOf === 'manager' ? 'the Manager\'s role stays' : `that is the ${agentName(agentOf)}'s role — use agent_disable(agent: "${agentOf}")`)
+      const own = Object.entries(d.extra_roles ?? {}).find(([, r]) => r === rid)
+      if (!own) throw new ToolError('a team only deletes roles it created (discord_admin create_role) — other server roles are the owner\'s to manage')
+      const by = await approval()
+      await client.delete(`/guilds/${instance.guildId}/roles/${rid}`, reason).catch(e => { if (e.status !== 404) throw e })
+      updateKbProfile(instance.workspaceDir, k, x => { delete x.discord.extra_roles[own[0]] })
+      return { kb: k, deleted_role: rid, name: own[0], approved_by: by }
+    }
+    throw new ToolError('action must be create_channel, delete_channel, create_role or delete_role')
+  }
+
+  async function bot_register({ agent, approval_chat_id, approval_message_id }) {
+    const a = agentId(agent)
+    if (!isRouter && a !== 'manager' && !instance.availableAgents(kbId).includes(a)) throw new ToolError(`"${a}" is not an agent of this team`)
+    const inst = fresh()
+    const tokenEnv = inst.settings.bots?.[a]?.token_env ?? tokenEnvFor(a)
+    const token = inst.secret(tokenEnv)
+    if (!token) return { agent: a, registered: false, next: botStatus(kbId, a).next }
+    const by = await approved({ approval_chat_id, approval_message_id }, 'bot_register')
+    let r
+    try {
+      r = await registerBot({ instance: inst, agent: a, token, clientFor })
+    } catch (e) {
+      if (e.status === 401) throw new ToolError(`Discord refused the ${tokenEnv} token in workspace/.env — the owner resets it in the Developer Portal (Bot → Reset Token) and replaces it in the file`)
+      throw e
+    }
+    return {
+      agent: a, registered: true, bot: r.username, activated: r.activated, in_server: r.in_server, approved_by: by,
+      ...(r.invite_url ? { invite_url: r.invite_url, next: 'Give the owner the invite_url to add it to the server (Authorize), then remind them to lock the app down: Installation → Install Link: None, then Bot → Public Bot OFF.' } : { next: 'Ready now — no restart needed.' }),
+      ...(r.warnings.length ? { warnings: r.warnings } : {}),
+    }
+  }
+
+  /**
+   * How to dispatch an agent. Claude Code loads agent definitions when the session starts; afterwards it
+   * only picks up new files in a KB's .claude/agents/ when that folder already existed. An agent created
+   * later is dispatched as general-purpose with its definition file — no restart needed.
+   */
+  function subagentType(kb, a) {
+    if (CORE_AGENTS.includes(a)) return { subagent_type: `creliobot:${a}` }
+    if (kb && (instance.kb(kb).agents?.custom ?? []).includes(a)) {
+      return kbAgentsWatched ? { subagent_type: a } : { subagent_type: 'general-purpose', definition: join(instance.kb(kb).path, '.claude', 'agents', `${a}.md`) }
+    }
+    return wsAgentsAtStart.has(`${a}.md`) ? { subagent_type: `crelio-workspace:${a}` } : { subagent_type: 'general-purpose', definition: join(wsAgentsDir, `${a}.md`) }
   }
 
   /** Who is on this team and how to reach them — for subagents, which don't see the session context. */
@@ -517,13 +736,15 @@ export function createTools({
       agents: agents().map(a => ({
         id: a,
         name: agentName(a),
-        subagent_type: CORE_AGENTS.includes(a) ? `creliobot:${a}` : (kb?.agents?.custom ?? []).includes(a) ? a : `crelio-workspace:${a}`,
+        ...subagentType(kbId, a),
         bot_user_id: instance.botFor(kbId, a)?.user_id ?? null,
         role_id: d.roles?.[a] ?? null,
         channel_id: a === 'manager' ? (d.general_id ?? null) : (d.agents?.[a] ?? null),
         mention: d.roles?.[a] ? `<@&${d.roles[a]}>` : instance.botFor(kbId, a)?.user_id ? `<@${instance.botFor(kbId, a).user_id}>` : agentName(a),
       })),
-      ...(isRouter ? { kbs: [...instance.kbs.values()].map(k => ({ id: k.id, name: k.name ?? k.id, language: k.language, general_id: k.discord?.general_id, session_name: `crelio-${k.id}` })) } : {}),
+      ...(isRouter
+        ? { kbs: [...instance.kbs.values()].map(k => ({ id: k.id, name: k.name ?? k.id, language: k.language, general_id: k.discord?.general_id, session_name: `crelio-${k.id}`, agents: instance.agentsFor(k.id) })) }
+        : { available: instance.availableAgents(kbId).filter(a => !agents().includes(a)), channels: d.channels ?? {} }),
     }
   }
 
@@ -540,6 +761,7 @@ export function createTools({
   return {
     post, edit, react, thread_open, thread_close, thread_list, thread_history, thread_meta, whereami,
     transcribe, speak, team, team_learning, schedules, provision_agent, restart_session,
+    agent_enable, agent_disable, discord_admin, bot_register,
     route, instance_status,
     _target: target, _botClient: botClient,
   }

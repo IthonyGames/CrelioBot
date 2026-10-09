@@ -47,8 +47,9 @@ export async function addBot({ workspace, repoDir, agent, log = console.log }) {
   const me = await client.get('/users/@me').catch(e => { throw new ConfigError(`The ${tokenEnv} token was refused by Discord (${e.message}) — reset it in the Developer Portal and try again`) })
   const app = await client.get('/applications/@me')
   log(`✔ token valid — bot "${me.username}" (${me.id})`)
-  if (!hasMessageContentIntent(app.flags)) {
-    log(`⚠ Message Content Intent looks OFF — Bot tab → Privileged Gateway Intents → Message Content Intent${agent === 'manager' ? ' (required for the Manager: it reads the messages)' : ''}`)
+  // Only the Manager reads messages (its plugin holds the gateway); Specialists only write.
+  if (agent === 'manager' && !hasMessageContentIntent(app.flags)) {
+    log('⚠ Message Content Intent looks OFF — Bot tab → Privileged Gateway Intents → Message Content Intent (required: the Manager reads the messages)')
   }
   await gatewayLogin(token).then(
     () => log('✔ activated on the gateway (required once before a bot can post)'),

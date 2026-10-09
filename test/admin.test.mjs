@@ -37,10 +37,11 @@ test('Router tools exist only in the Router; KB administration only in KB sessio
   assert.ok(k.includes('schedules') && k.includes('provision_agent') && !k.includes('route'))
 })
 
-test('the Router posts a routed request in the KB General as that KB\'s Manager bot', async () => {
+test('a routed request reaches the KB General without a ping, and the request gets a ✅ instead of a reply', async () => {
   const { instance, fake, env } = await setup()
   const router = startMcp(env('router'))
-  const res = await router.call('route', { kb: 'beta', text: 'Add a FAQ page\nwith 5 questions', author_id: '380127725123403779', source_message_id: '600000000000000001' })
+  const request = fake.addMessage(instance.globalGeneralId, { content: 'Add a FAQ page', author: { id: '380127725123403779', username: 'anthony', global_name: 'Anthony' } })
+  const res = await router.call('route', { kb: 'beta', text: 'Add a FAQ page\nwith 5 questions', author_id: '380127725123403779', source_message_id: request.id })
   const bad = await router.call('route', { kb: 'nope', text: 'x' })
   await router.close(); await fake.close()
   assert.equal(res.isError, false, res.text)
@@ -48,10 +49,33 @@ test('the Router posts a routed request in the KB General as that KB\'s Manager 
   assert.equal(res.data.session_name, 'crelio-beta')
   const sent = fake.posts().at(-1)
   assert.equal(sent.token, `token-${instance.settings.bots.manager.token_env}`)
-  assert.match(sent.json.content, /From the Global General.*<@380127725123403779>/)
+  assert.match(sent.json.content, /^📨 \*\*Anthony\*\*/)
+  assert.doesNotMatch(sent.json.content, /<@/, 'the author is named, not mentioned')
   assert.match(sent.json.content, /> Add a FAQ page\n> with 5 questions/)
   assert.deepEqual(sent.json.allowed_mentions, { parse: [] })
+  assert.equal(sent.json.flags & 4096, 4096, 'silent: no push notification')
+  assert.equal(fake.posts().filter(p => p.path === `/channels/${instance.globalGeneralId}/messages`).length, 0, 'nothing posted in the Global General')
+  const reaction = fake.state.requests.find(r => r.method === 'PUT' && r.path.includes(`/messages/${request.id}/reactions/`))
+  assert.ok(reaction && decodeURIComponent(reaction.path).includes('✅'))
   assert.match(bad.text, /Unknown KB "nope"/)
+})
+
+test('a routed request carries its attachments into the KB General', async () => {
+  const { instance, fake, env } = await setup()
+  const base = fake.api.replace('/api/v10', '')
+  fake.state.files.set('901', Buffer.from('png-bytes'))
+  const request = fake.addMessage(instance.globalGeneralId, {
+    content: 'icons like this', author: { id: '380127725123403779', username: 'anthony' },
+    attachments: [{ id: '901', filename: 'style.png', size: 9, url: `${base}/files/901` }],
+  })
+  const router = startMcp(env('router'))
+  const res = await router.call('route', { kb: 'alpha', text: 'Make agent icons like the attached style', author_id: '380127725123403779', source_message_id: request.id })
+  await router.close(); await fake.close()
+  assert.equal(res.isError, false, res.text)
+  assert.deepEqual(res.data.attachments, ['style.png'])
+  const sent = fake.posts().at(-1)
+  assert.deepEqual(sent.form.files.map(f => [f.name, f.size]), [['style.png', 9]])
+  assert.equal(sent.form.payload.flags & 4096, 4096)
 })
 
 test('instance_status shows each KB\'s open threads with their records', async () => {

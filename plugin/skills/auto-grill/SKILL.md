@@ -17,17 +17,16 @@ Grilling (see the `grilling` skill) interviews a person until every branch of th
    - classify it:
      - **Settled by Evidence** → decide; cite the Evidence.
      - **Taste, priority, money, brand, risk appetite, or no Evidence** → it belongs to a person. Prepare your recommendation and why.
-4. **Post the round** — all questions, numbered, in the grilling format:
+4. **Post the round** — all questions, numbered, one line each:
 
    ```
    🧠 **Round <n> — <Task>**
-   ❓ **Q1 — <title>**: <question and options>
-   ✅ Decided: <answer> — Evidence: <source>
-   ❓ **Q2 — <title>**: <question and options>
-   ➡️ Recommendation: <answer> — <why>. **<@person>, your call.**
+   ✅ **Q1 — <title>**: <answer> — <Evidence, short>
+   ❓ **Q2 — <title>**: <question, options> ➡️ <recommendation> — <why, short>
+   <@person> your call on Q2 (“ok” = recommendations).
    ```
 
-   Decided questions are shown so the person can override them; open ones tag the person who should decide (usually the Requester).
+   Decided questions are shown so the person can override them; the person who should decide open ones (usually the Requester) is tagged once, at the end. Long context goes in an attached file, not the round.
 5. **If any question is open**, stop and return `STATUS: needs-input` with the round's message id. The Manager brings the answers back; "ok" means "accept all recommendations".
 6. **Recompute the frontier** with the new answers and repeat. Done when the frontier is empty: every branch visited, nothing silently assumed.
 

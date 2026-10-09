@@ -43,6 +43,37 @@ test('an agent posts through its own bot, with link previews suppressed', async 
   assert.deepEqual(req[0].json.allowed_mentions.parse, ['users', 'roles'])
 })
 
+test('a person is pinged only when the text mentions them — a reply alone does not ping', async () => {
+  const req = fake.addMessage(alpha.general_id, { content: 'quick question', author: { id: '42', username: 'anthony' } })
+  await mcp.call('post', { agent: 'manager', chat_id: alpha.general_id, text: 'Answer', reply_to: req.id })
+  const sent = fake.posts().at(-1).json
+  assert.equal(sent.message_reference.message_id, req.id)
+  assert.equal(sent.allowed_mentions.replied_user, false)
+})
+
+test('a post that runs long comes back with a note to keep chat posts short', async () => {
+  const short = await mcp.call('post', { agent: 'kb-researcher', chat_id: alpha.general_id, text: '📚 KB — two facts (notes/a.md)' })
+  const long = await mcp.call('post', { agent: 'kb-researcher', chat_id: alpha.general_id, text: 'x'.repeat(1200) })
+  assert.equal(short.data.note, undefined)
+  assert.match(long.data.note, /1200 characters — too long for a chat post.*brief/)
+})
+
+test('react and edit speak as the Manager unless an agent is named', async () => {
+  const msg = fake.addMessage(alpha.general_id, { content: 'thanks', author: { id: '42', username: 'anthony' } })
+  const res = await mcp.call('react', { chat_id: alpha.general_id, message_id: msg.id, emoji: '✅' })
+  assert.equal(res.isError, false, res.text)
+  const put = fake.state.requests.filter(r => r.method === 'PUT').at(-1)
+  assert.equal(put.token, tokenOf('manager'))
+})
+
+test('thread tools accept thread_id in place of chat_id', async () => {
+  const req = fake.addMessage(alpha.general_id, { content: 'Plan the launch', author: { id: '42', username: 'anthony' } })
+  const { data: th } = await mcp.call('thread_open', { chat_id: alpha.general_id, message_id: req.id, name: 'Launch' })
+  const res = await mcp.call('thread_history', { thread_id: th.thread_id })
+  assert.equal(res.isError, false, res.text)
+  assert.equal(res.data.chat_id, th.thread_id)
+})
+
 test('long text is split into messages of at most 2000 characters', async () => {
   const before = fake.posts().length
   const text = Array.from({ length: 60 }, (_, i) => `Paragraph ${i}: ${'x'.repeat(80)}`).join('\n\n')

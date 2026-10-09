@@ -24,6 +24,7 @@ Discord server
 - **One team per knowledge base**: one Claude Code session per KB, so contexts and files never mix. A Router in the server-wide channel forwards requests to the right team.
 - **Ten core agents**: Manager, KB Researcher, Web Researcher, Brainstormer, Artist, UX Expert, Marketing, Lawyer, Planner, Coder. Each is a real Discord bot you can @mention.
 - **A thread per task**: the Manager reuses or opens it, syncs your task system (local board, Notion, Motion, markdown tickets, or your own skill), runs the specialists in pipeline order (in parallel where possible), then posts a summary with the results and closes the thread.
+- **Quiet by design**: one notification when a task starts, one per question that needs you, one when it's done. Agents post a few lines each and pass the details to each other in their briefs, and they react (👀, ✅) instead of posting acknowledgements. A request sent from the server-wide channel gets a ✅ there, and its thread is where you're pinged.
 - **Evidence or escalation**: agents decide on their own only when the KB or research backs the decision. Otherwise they tag the person most likely to know, with numbered questions and a recommendation. Durable answers are written back into the KB, so the same question never comes twice.
 - **Side threads**: talk to a specialist directly in its channel. Say "approved" and it hands the result back to the Manager.
 - **Voice**: your voice messages are transcribed. Agents answer with real Discord voice messages.

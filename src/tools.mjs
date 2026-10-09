@@ -11,6 +11,14 @@ import { splitMessage } from './split.mjs'
 
 export class ToolError extends Error { name = 'ToolError' }
 
+const AGENT_NAMES = {
+  manager: 'Manager', 'kb-researcher': 'KB Researcher', 'web-researcher': 'Web Researcher', brainstormer: 'Brainstormer',
+  artist: 'Artist', 'ux-expert': 'UX Expert', marketing: 'Marketing', lawyer: 'Lawyer', planner: 'Planner', coder: 'Coder',
+}
+export function agentName(id) {
+  return AGENT_NAMES[id] ?? id.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+}
+
 const MESSAGE_TYPES = new Set([0, 19]) // default and reply; skip system messages
 const HISTORY_BUDGET = 60_000
 
@@ -252,6 +260,30 @@ export function createTools({ instance, sessionId, clientFor = token => discordC
     return out
   }
 
+  /** Who is on this team and how to reach them — for subagents, which don't see the session context. */
+  async function team() {
+    const kb = isRouter ? null : instance.kb(kbId)
+    const d = kb?.discord ?? {}
+    return {
+      session: sessionId,
+      kb: kb ? { id: kb.id, name: kb.name ?? kb.id, path: kb.path, language: kb.language ?? instance.language, tasks: kb.tasks ?? { adapter: 'none' } } : null,
+      language: kb?.language ?? instance.language,
+      hop_budget: instance.hopBudget,
+      owner_id: instance.settings.server?.owner_id,
+      kb_general_id: d.general_id ?? null,
+      global_general_id: instance.globalGeneralId ?? null,
+      agents: agents().map(a => ({
+        id: a,
+        name: agentName(a),
+        bot_user_id: instance.botFor(kbId, a)?.user_id ?? null,
+        role_id: d.roles?.[a] ?? null,
+        channel_id: a === 'manager' ? (d.general_id ?? null) : (d.agents?.[a] ?? null),
+        mention: d.roles?.[a] ? `<@&${d.roles[a]}>` : instance.botFor(kbId, a)?.user_id ? `<@${instance.botFor(kbId, a).user_id}>` : agentName(a),
+      })),
+      ...(isRouter ? { kbs: [...instance.kbs.values()].map(k => ({ id: k.id, name: k.name ?? k.id, language: k.language, general_id: k.discord?.general_id, session_name: `crelio-${k.id}` })) } : {}),
+    }
+  }
+
   async function team_learning({ text, agents: who }) {
     const lesson = String(need(text, 'text')).replace(/\s+/g, ' ').trim()
     const file = join(instance.workspaceDir, 'learnings', 'team.md')
@@ -262,5 +294,5 @@ export function createTools({ instance, sessionId, clientFor = token => discordC
     return { recorded: line.trim() }
   }
 
-  return { post, edit, react, thread_open, thread_close, thread_list, thread_history, thread_meta, whereami, team_learning, _target: target, _botClient: botClient }
+  return { post, edit, react, thread_open, thread_close, thread_list, thread_history, thread_meta, whereami, team, team_learning, _target: target, _botClient: botClient }
 }

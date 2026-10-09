@@ -1,0 +1,13 @@
+{
+  "name": "creliobot",
+  "version": "0.1.0",
+  "description": "CrelioBot agent teams for Claude Code: Manager, Router and nine Specialists that work together in Discord, with the team protocol and skills they share.",
+  "author": {
+    "name": "Anthony Massicotte",
+    "url": "https://github.com/IthonyGames"
+  },
+  "homepage": "https://github.com/IthonyGames/CrelioBot",
+  "repository": "https://github.com/IthonyGames/CrelioBot",
+  "license": "MIT",
+  "keywords": ["discord", "agents", "multi-agent", "knowledge-base", "team"]
+}

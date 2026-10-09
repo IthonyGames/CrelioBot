@@ -184,6 +184,18 @@ test('files are attached to the last message', async () => {
   assert.deepEqual(last.form.files.map(f => f.name), ['report.md'])
 })
 
+test('team tells an agent who is on its team and how to mention them', async () => {
+  const { data } = await mcp.call('team', {})
+  assert.equal(data.kb.id, 'alpha')
+  assert.equal(data.language, 'fr')
+  assert.equal(data.kb_general_id, alpha.general_id)
+  const coder = data.agents.find(a => a.id === 'coder')
+  assert.equal(coder.name, 'Coder')
+  assert.equal(coder.bot_user_id, userOf('coder'))
+  assert.equal(coder.channel_id, alpha.agents.coder)
+  assert.equal(coder.mention, `<@${userOf('coder')}>`)
+})
+
 test('team learnings go to the Workspace', async () => {
   const res = await mcp.call('team_learning', { text: 'Ask the Lawyer before the Marketing copy is final', agents: ['lawyer', 'marketing'] })
   assert.match(res.data.recorded, /\[alpha\] \(lawyer, marketing\) Ask the Lawyer/)

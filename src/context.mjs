@@ -1,0 +1,76 @@
+// Session context injected at session start (and after /clear or compaction) by the plugin's
+// SessionStart hook: identity, team roster, channels, task system, Schedules to arm, open threads
+// with their last messages, recent Team learnings. Kept under ~9 000 characters, beyond which
+// Claude Code moves hook output to a file instead of the context.
+
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { ROUTER } from './instance.mjs'
+import { agentName } from './tools.mjs'
+
+const BUDGET = 9000
+const MAX_THREADS = 8
+const LAST_MESSAGES = 5
+
+export async function sessionContext({ instance, sessionId, tools }) {
+  const isRouter = sessionId === ROUTER
+  const team = await tools.team()
+  const out = []
+
+  if (isRouter) {
+    out.push(
+      '# CrelioBot — Router session',
+      `You are the Router of this Instance. Global General: ${instance.globalGeneralId}. Owner: <@${team.owner_id}>. Default language: ${team.language}.`,
+      '', '## KB teams (route with mcp__crelio__route, then SendMessage to the session name)',
+      ...team.kbs.map(k => `- **${k.name}** (id \`${k.id}\`, ${k.language ?? team.language}) — General ${k.general_id} — session \`${k.session_name}\``),
+    )
+  } else {
+    const kb = team.kb
+    out.push(
+      `# CrelioBot — ${kb.name} team (KB \`${kb.id}\`)`,
+      `You are the Manager of this team. Language for everything posted: **${team.language}**. Hop budget per Task: ${team.hop_budget}. Owner: <@${team.owner_id}>. KB folder: ${kb.path}`,
+      `Task system adapter: \`${kb.tasks?.adapter ?? 'none'}\`${kb.tasks?.notes ? ` — ${kb.tasks.notes}` : ''}`,
+      '', '## Channels and team (agent — bot — role — channel)',
+      `- KB General: ${team.kb_general_id}`,
+      ...team.agents.map(a => `- ${a.name} (\`${a.id}\`) — bot ${a.bot_user_id ?? '—'} — mention ${a.mention} — channel ${a.channel_id ?? '—'}${a.id === 'manager' || a.bot_user_id ? '' : ' — ⚠ no bot yet'}`),
+    )
+    const schedules = instance.kb(sessionId).schedules ?? []
+    if (schedules.length) {
+      out.push('', '## Schedules — arm each with CronCreate if CronList does not show it',
+        ...schedules.map(s => `- \`${s.id}\` — cron \`${s.cron}\` — ${s.prompt}`))
+    }
+  }
+
+  // Open threads, most recent first, with their last messages.
+  let threads = []
+  try { threads = (await tools.thread_list({})).threads } catch (e) { out.push('', `## Open threads\nCould not read them at start (${e.message}). Use thread_list.`) }
+  if (threads.length) {
+    threads.sort((a, b) => (BigInt(b.last_message_id ?? b.thread_id) > BigInt(a.last_message_id ?? a.thread_id) ? 1 : -1))
+    out.push('', '## Open threads (read the full history with thread_history before acting in one)',
+      'After a restart, subagents that were running are gone: re-dispatch from the history when work was in progress.')
+    for (const t of threads.slice(0, MAX_THREADS)) {
+      const meta = [t.kind, t.channel, t.task_id && `task ${t.task_id}`, t.requester && `requester <@${t.requester}>`, t.hops !== undefined && `hops ${t.hops}`, t.waiting_on && `waiting on ${JSON.stringify(t.waiting_on)}`].filter(Boolean).join(' · ')
+      out.push(`### «${t.name}» — chat_id ${t.thread_id}`, meta)
+      try {
+        const h = await tools.thread_history({ chat_id: t.thread_id, limit: LAST_MESSAGES })
+        if (h.request) out.push(`Request: ${h.request.slice(0, 300)}`)
+        out.push(...h.messages.map(m => (m.length > 280 ? m.slice(0, 280) + '…' : m)))
+      } catch {}
+    }
+    if (threads.length > MAX_THREADS) out.push(`(${threads.length - MAX_THREADS} more open threads — thread_list)`)
+  } else if (!out.some(l => l.startsWith('## Open threads'))) {
+    out.push('', '## Open threads', 'None.')
+  }
+
+  const learnings = join(instance.workspaceDir, 'learnings', 'team.md')
+  if (existsSync(learnings)) {
+    const lines = readFileSync(learnings, 'utf8').split('\n').filter(l => l.startsWith('- ')).slice(-12)
+    if (lines.length) out.push('', '## Recent Team learnings', ...lines)
+  }
+
+  let text = out.join('\n')
+  if (text.length > BUDGET) text = text.slice(0, BUDGET - 80) + '\n…(truncated — use thread_list / thread_history for the rest)'
+  return text
+}
+
+export { agentName }

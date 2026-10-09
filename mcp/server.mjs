@@ -89,6 +89,11 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { chat_id: chatProp, message_id: { type: 'string' } }, required: ['chat_id'] },
   },
   {
+    name: 'team',
+    description: 'Your team: KB, language, Hop budget, owner, and every agent with its display name, bot user id, role id, channel and the mention to use. Call it once when you start working (subagents do not see the session context).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'team_learning',
     description: 'Record a Team learning — a lesson about how the agents work together (not about the KB\'s domain: those go into the KB with its own learning method).',
     inputSchema: { type: 'object', properties: { text: { type: 'string' }, agents: { type: 'array', items: { type: 'string' } } }, required: ['text'] },

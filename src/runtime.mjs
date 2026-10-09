@@ -1,8 +1,8 @@
 // Session runtime: everything needed to start one session — working folder, environment,
-// `claude` arguments and the generated files. Pure: it reads the Instance, writes nothing.
-// writeSessionFiles() puts the generated files on disk.
+// `claude` arguments and the generated files. buildSession is pure: it reads the Instance, writes nothing.
+// writeSessionFiles() puts the generated files on disk; writeAccess() rewrites a running session's plugin access.
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { ConfigError, ROUTER } from './instance.mjs'
 
@@ -34,6 +34,34 @@ const GUARDED_RULES = [
   'Bash(git *)', 'Bash(gh pr *)', 'Bash(gh issue *)', 'Bash(cd *)', 'Bash(ls *)',
   'Bash(npm install*)', 'Bash(npm ci*)', 'Bash(npm test*)', 'Bash(npm run *)',
 ]
+
+/**
+ * The official Discord plugin's access.json for a session: deliver every message from the session's
+ * channels (and their threads), no DMs. The plugin re-reads it on every message, so rewriting it
+ * (writeAccess) makes a session hear a new Agent channel at once — no restart.
+ */
+export function accessFor(instance, id) {
+  return {
+    dmPolicy: 'allowlist',
+    allowFrom: [],
+    groups: Object.fromEntries(instance.channelsOf(id).map(c => [c, { requireMention: false, allowFrom: [] }])),
+    pending: {},
+    ackReaction: instance.settings.ack_reaction ?? '👀',
+    replyToMode: 'off',
+    chunkMode: 'newline',
+  }
+}
+
+export function accessPath(instance, id) {
+  return join(instance.stateDir(id), 'discord', 'access.json')
+}
+
+export function writeAccess(instance, id) {
+  const path = accessPath(instance, id)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path + '.tmp', JSON.stringify(accessFor(instance, id), null, 2) + '\n', { mode: 0o600 })
+  renameSync(path + '.tmp', path)
+}
 
 function hookCommand(nodePath, script) {
   const fwd = p => p.replaceAll('\\', '/')
@@ -67,17 +95,6 @@ export function buildSession(instance, id, { parentEnv = process.env, nodePath =
     ...crelioEnv,
     DISCORD_STATE_DIR: discordDir,
     DISCORD_BOT_TOKEN: instance.requireToken(kbId, 'manager'),
-    DISCORD_ACCESS_MODE: 'static',
-  }
-
-  const access = {
-    dmPolicy: 'allowlist',
-    allowFrom: [],
-    groups: Object.fromEntries(channels.map(c => [c, { requireMention: false, allowFrom: [] }])),
-    pending: {},
-    ackReaction: instance.settings.ack_reaction ?? '👀',
-    replyToMode: 'off',
-    chunkMode: 'newline',
   }
 
   const mcp = {
@@ -133,7 +150,7 @@ export function buildSession(instance, id, { parentEnv = process.env, nodePath =
     inbox,
     permission,
     files: {
-      [join(discordDir, 'access.json')]: json(access),
+      [accessPath(instance, id)]: json(accessFor(instance, id)),
       [settingsPath]: json(settings),
       [mcpPath]: json(mcp),
     },

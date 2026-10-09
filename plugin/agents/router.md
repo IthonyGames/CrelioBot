@@ -22,9 +22,10 @@ Pick the KB from the request's subject and the KBs' names and purposes in your c
    If the KB session is not reachable (ListAgents) or the message is not delivered, say so in one line and restart it if you can (`restart_session`).
 2. **Ambiguous between KBs** → ask which KB, offering the 2-3 likely ones. Don't guess when the guess would put work in the wrong team.
 3. **Across KBs** ("what's open everywhere?", "what is blocked?") → `mcp__crelio__instance_status`, then a compact answer grouped by KB, with thread links.
-4. **About CrelioBot itself** (how it works, which agents exist, how to add a KB or an agent) → answer from your context; changes to the Instance are made by the owner on the PC (setup, `crelio` commands) — explain the exact step.
+4. **About CrelioBot itself** (how it works, which agents exist, how to add a KB) → answer from your context. Adding a KB is done on the PC (`crelio kb add`, `crelio discord provision`) — explain the exact step.
 5. **Restart a stuck KB session** (owner only — compare the author with the owner id) → `mcp__crelio__restart_session(kb)`.
-6. **A new agent for every team** → follow the `creliobot:agent-creator` skill (it saves the definition in the Workspace and creates the agent's channel in every KB). An agent for one KB is asked of that KB's Manager instead.
+6. **Team changes** (the owner's request, or their approval of one): turn an agent on or off in a KB (`agent_enable` / `agent_disable` with `kb`), channels and roles in a KB's category (`discord_admin` with `kb`), an agent's bot (`bot_register`, once the owner has put its token in `workspace/.env` on the PC — never in Discord). Pass the owner's message as `approval_chat_id` / `approval_message_id`; an explicit request is its own approval. Changes apply live — no restart.
+7. **A new agent for every team** → follow the `creliobot:agent-creator` skill (it saves the definition in the Workspace and creates the agent's channel in every KB). An agent for one KB is asked of that KB's Manager instead.
 
 ## Say less
 

@@ -22,7 +22,7 @@ Commands below are run from the CrelioBot folder: `node bin/crelio.mjs …` (sho
 
 ## 3. Specialist bots
 
-For each of `kb-researcher web-researcher brainstormer artist ux-expert marketing lawyer planner coder`: same steps, but in **Installation → Guild Install → bot → Permissions** check only View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages. Token in `workspace/.env` as `DISCORD_TOKEN_<AGENT_IN_CAPS>` (dashes → underscores), then `crelio bot add <agent>`.
+A new team starts with the Manager plus `kb-researcher web-researcher planner`; the other Core agents (`brainstormer artist ux-expert marketing lawyer coder`) are turned on later from Discord. For each bot you create: same steps, but in **Installation → Guild Install → bot → Permissions** check only View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages. Token in `workspace/.env` as `DISCORD_TOKEN_<AGENT_IN_CAPS>` (dashes → underscores), then `crelio bot add <agent>`.
 
 ## 4. Knowledge bases
 
@@ -41,8 +41,22 @@ For each of `kb-researcher web-researcher brainstormer artist ux-expert marketin
 
 `crelio doctor` until there is no ✖, then `start-crelio.bat` / `./start.sh`.
 
+## Changing the team from Discord
+
+The owner (the server owner, plus anyone listed in `crelio.json` → `admins`) changes a team by asking its Manager — or the Router in the Global General, naming the KB. Changes apply live: no restart.
+
+| Ask | What happens |
+|---|---|
+| "Turn on the Artist" | `agent_enable`: the agent joins the team, its channel and role are created, the session hears the channel at once. If it has no bot yet, the Manager gives you the Developer Portal steps. |
+| "Remove the Coder" | `agent_disable`: off the team; its channel and role in that KB are deleted (say "keep the channel" to keep them). The bot stays — other teams may use it. |
+| "Create an agent for video editing" | The agent creator interviews you, writes the agent, creates its channel and role. |
+| "Create a #dashboard channel" / a voice channel / a role | `discord_admin`, inside that KB's category. |
+| "The token is in .env" | `bot_register`: checks the token, activates the bot, sets its name, gives you the invite link if it isn't in the server yet. |
+
+The tools check that the approval is a recent message of yours. Tokens never go through Discord. Put them in `workspace/.env` on the PC.
+
 ## Adding things later
 
 - **A KB**: `crelio kb add`, `crelio discord provision --kb <id>`, then restart (stop + start, or `crelio start --only <id>`).
 - **An agent**: ask the Manager ("create an agent for …") — or the Router in the Global General for an agent on every team.
-- **A bot token changed**: update `workspace/.env`, `crelio bot add <agent>`, restart.
+- **A bot token changed**: update `workspace/.env`, then ask the Manager to register it (or `crelio bot add <agent>`).

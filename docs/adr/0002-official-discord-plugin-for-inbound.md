@@ -9,3 +9,4 @@ Each session receives Discord messages through `plugin:discord@claude-plugins-of
 - Schedules fire inside each KB session (session-scoped cron, re-armed at every session start), because nothing outside a session can push into it.
 - One Manager token is used by several plugin instances at once (one gateway connection per session). If that ever misbehaves, a KB profile can give its session a dedicated Manager token.
 - If Anthropic opens custom-channel allowlisting to individual users, the hub design can return; the MCP tool layer is unchanged by that switch.
+- *2026-10-09:* sessions no longer run the plugin in static access mode. The plugin re-reads `access.json` on every message, so a Team change (a new Agent channel, a channel the owner had created) is heard without a restart. With an allowlist DM policy and no pairing, the plugin never writes the file itself.

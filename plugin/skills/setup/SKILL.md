@@ -48,10 +48,10 @@ Then run `node bin/crelio.mjs bot add manager`: it validates the token, checks t
 
 ## 4. The Specialist bots
 
-Each agent speaks through its own bot (people can @mention it; it can send Voice notes). Nine Core Specialists: kb-researcher, web-researcher, brainstormer, artist, ux-expert, marketing, lawyer, planner, coder.
+Each agent speaks through its own bot (people can @mention it; it can send Voice notes). A new team starts small: the Manager plus **kb-researcher, web-researcher and planner** — create those three bots now. The other Core agents (brainstormer, artist, ux-expert, marketing, lawyer, coder) stay off until someone needs one: the owner asks the Manager in Discord ("turn on the Artist"), the Manager creates its channel and role, and gives the steps for its bot then — no restart.
 
 - Same Portal steps as the Manager for each (including the lock-down of step 7 once the bot is in the server), **except the permissions**: in **Installation → Default Install Settings → Guild Install → bot → Permissions**, check only **View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages** — no Administrator. (Message Content Intent is not needed for Specialists but harmless.) Users can reuse bot applications they already have — renaming them is fine.
-- Fastest path: create them all, paste all tokens into `workspace/.env` (`DISCORD_TOKEN_KB_RESEARCHER=`, `DISCORD_TOKEN_WEB_RESEARCHER=`, …), save, then you run `bot add <agent>` for each and give the user the invite links (Specialists get only the permissions they need: talk, threads, files, reactions, voice messages).
+- Fastest path: create the three, paste their tokens into `workspace/.env` (`DISCORD_TOKEN_KB_RESEARCHER=`, `DISCORD_TOKEN_WEB_RESEARCHER=`, `DISCORD_TOKEN_PLANNER=`), save, then you run `bot add <agent>` for each and give the user the invite links (Specialists get only the permissions they need: talk, threads, files, reactions, voice messages). Users who want the full team from day one can enable more agents in their KB profile (`agents.enabled`) and create those bots too.
 - Discord seems to cap applications per account (around 25). Ten bots fit; more may need a Developer Team.
 - An agent without its bot can't post: you may continue setup and add missing bots later (`doctor` lists them).
 
@@ -68,7 +68,7 @@ If a folder isn't structured as a knowledge base yet and the user has a KB-build
 
 ## 6. Discord layout
 
-`node bin/crelio.mjs discord provision` — creates the **CrelioBot › #general** (Global General), one category per KB with **#general** and one channel per Specialist, and a mentionable role per agent. Re-running it is safe.
+`node bin/crelio.mjs discord provision` — creates the **CrelioBot › #general** (Global General), one category per KB with **#general** and one channel per enabled Specialist, and a mentionable role per agent. Re-running it is safe.
 
 ## 7. Voice (optional)
 
@@ -84,4 +84,4 @@ Offer a morning brief per KB (open threads, blocked tasks, what waits on them). 
 2. Start: double-click **start-crelio.bat** (Windows) or `./start.sh` (macOS/Linux). One window per session opens (Router + each KB); they restart by themselves. **stop-crelio.bat** stops everything.
 3. First test with the user: write "hello" in a KB's #general → the Manager answers; then a real request → a Task thread opens and the team starts.
 
-Finish with a short recap: what was set up, where the config lives (`workspace/`), how to add a KB (`crelio kb add` + `discord provision` + restart) or an agent (ask the Manager: "create an agent for …").
+Finish with a short recap: what was set up, where the config lives (`workspace/`), how to add a KB (`crelio kb add` + `discord provision` + restart), and that the team is changed from Discord by the owner: "turn on the Lawyer", "remove the Coder", "create an agent for …", "create a #dashboard channel" — live, no restart.

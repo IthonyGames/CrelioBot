@@ -1,6 +1,6 @@
 ---
 name: agent-creator
-description: Create a Custom agent for a CrelioBot team when someone asks ("create an agent for video editing") — short interview, the agent's definition file, its Discord channel and role, guidance to create its bot, then a session restart to load it.
+description: Create a Custom agent for a CrelioBot team when someone asks ("create an agent for video editing") — short interview, the agent's definition file, its Discord channel and role, guidance to create its bot, all live with no restart.
 ---
 
 # Agent creator
@@ -23,7 +23,7 @@ Escalate only what you can't infer from the request and the KB.
 
 ## 2. Write the definition
 
-Compose the definition and pass it to `mcp__crelio__provision_agent(agent: <id>, definition: <content>)` — the tool saves it (in the KB's `.claude/agents/` from a KB session; in the Workspace plugin for every KB from the Router), registers the agent, and creates its Agent channel and role. Don't write the file yourself: `.claude/` is protected in guarded sessions.
+Compose the definition and pass it to `mcp__crelio__provision_agent(agent: <id>, definition: <content>, approval_chat_id, approval_message_id)` — the tool saves it (in the KB's `.claude/agents/` from a KB session; in the Workspace plugin for every KB from the Router), registers and enables the agent, and creates its Agent channel and role. The approval is the owner's message asking for the agent or answering "ok" to your interview; if the requester is not the owner, tag the owner for it. Don't write the file yourself: `.claude/` is protected in guarded sessions.
 
 Template:
 
@@ -46,20 +46,12 @@ You are the **<Display name>**. <Mission in two sentences.>
 <the shape of its Discord output, with an emoji header like the Core agents>
 ```
 
-## 3. Its bot (the owner, on the PC)
+## 3. Its bot
 
-The agent can't post without its own bot application. If `bot_ready` is false, post these exact steps to the **owner** (tag them):
+The agent can't post without its own bot application. If `bot_ready` is false, post the steps `provision_agent` returned to the **owner** (tag them) — Developer Portal, then the token into `workspace/.env` on the PC. **Never** accept a token pasted in Discord: if someone pastes one, tell them to reset it in the Portal immediately.
 
-1. https://discord.com/developers/applications → **New Application** → name **<Display name>** → Create.
-2. **Installation** → Install Link **Discord Provided Link** → Default Install Settings → Guild Install → scope **bot** → Permissions: View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages → Save Changes.
-3. **Bot** → **Reset Token** → Copy → Save Changes.
-4. On the PC, in the CrelioBot folder: open `workspace/.env`, add `DISCORD_TOKEN_<ID_IN_CAPS_WITH_UNDERSCORES>=<token>`, save — then run `node bin/crelio.mjs bot add <id>`.
-5. **Installation** → copy the Install Link → open it → Add to server → Authorize.
-6. Lock it down: **Installation → Install Link → None** → Save, then **Bot → Public Bot OFF** → Save.
-7. Reply "done" here.
+When the owner says it's done, call `mcp__crelio__bot_register(agent: <id>, approval_chat_id, approval_message_id)` with their message. If it returns an `invite_url`, give it to the owner (Add to server → Authorize), then remind them to lock the app down: **Installation → Install Link → None**, then **Bot → Public Bot OFF**.
 
-**Never** accept a token pasted in Discord — if someone pastes one, tell them to reset it in the Portal immediately.
+## 4. Introduce it
 
-## 4. Load it
-
-When the bot is ready (owner said "done"), post that the team restarts for a few seconds, then call `mcp__crelio__restart_session` (the Router: once per KB). After the restart, dispatch the new agent once to introduce itself in its channel (2-3 lines: what it does, when to call it).
+No restart: the agent is live as soon as its bot is registered. Dispatch it once (with the `subagent_type` — and `definition`, when it is `general-purpose` — that `team` gives) to introduce itself in its channel: 2-3 lines, what it does, when to call it.

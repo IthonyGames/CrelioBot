@@ -3,12 +3,11 @@
 // never seen by an agent, never posted in Discord.
 
 import { createInterface } from 'node:readline'
-import { ConfigError, agentName, loadInstance, setSecret, updateSettings } from '../instance.mjs'
-import { discordClient } from '../discord.mjs'
-import { gatewayLogin } from '../gateway.mjs'
-import { hasMessageContentIntent, inviteUrl } from '../permissions.mjs'
+import { ConfigError, agentName, loadInstance, setSecret } from '../instance.mjs'
+import { inviteUrl } from '../permissions.mjs'
+import { PORTAL_STEPS, registerBot, tokenEnvFor } from '../bots.mjs'
 
-const tokenEnvFor = agent => `DISCORD_TOKEN_${agent.toUpperCase().replace(/-/g, '_')}`
+export { PORTAL_STEPS }
 
 function hiddenPrompt(question) {
   if (!process.stdin.isTTY) return Promise.resolve('')
@@ -19,61 +18,29 @@ function hiddenPrompt(question) {
   })
 }
 
-export const PORTAL_STEPS = agent => `
-  1. https://discord.com/developers/applications → "New Application" → name it "${agentName(agent)}" → Create
-  2. "Installation" → Install Link: "Discord Provided Link" → Default Install Settings → Guild Install →
-     scopes: bot → Permissions: ${agent === 'manager'
-       ? '"Administrator"'
-       : 'View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links,\n     Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages'} → Save Changes
-  3. "Bot" → "Reset Token" → copy it (shown once); Privileged Gateway Intents → "Message Content Intent" ON → Save
-  4. Paste the token below (hidden), or put it in workspace/.env as ${tokenEnvFor(agent)}=… and run this again
-     (never paste a token in a chat or in Discord — if you did, reset it)
-  5. "Installation" → copy the Install Link → open it → Add to server → Authorize
-  6. Lock it down: "Installation" → Install Link: None → Save; then "Bot" → "Public Bot" OFF → Save`
-
 export async function addBot({ workspace, repoDir, agent, log = console.log }) {
   if (!agent || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(agent)) throw new ConfigError('Usage: crelio bot add <agent id>   (e.g. manager, coder, kb-researcher)')
   let instance = loadInstance(workspace, { repoDir })
   const tokenEnv = instance.settings.bots?.[agent]?.token_env ?? tokenEnvFor(agent)
   let token = instance.secret(tokenEnv)
   if (!token) {
-    log(`\nBot for the ${agentName(agent)} agent — create it in the Discord Developer Portal:${PORTAL_STEPS(agent)}\n`)
+    log(`\nBot for the ${agentName(agent)} agent — create it in the Discord Developer Portal:${PORTAL_STEPS(agent)}\n  (or paste the token below, hidden, instead of step 4)\n`)
     token = await hiddenPrompt(`Token for ${agentName(agent)} (hidden): `)
     if (!token) throw new ConfigError(`No token given. Put it in workspace/.env as ${tokenEnv}=… and run "crelio bot add ${agent}" again.`)
     setSecret(workspace, tokenEnv, token)
+    instance = loadInstance(workspace, { repoDir })
   }
 
-  const client = discordClient(token)
-  const me = await client.get('/users/@me').catch(e => { throw new ConfigError(`The ${tokenEnv} token was refused by Discord (${e.message}) — reset it in the Developer Portal and try again`) })
-  const app = await client.get('/applications/@me')
-  log(`✔ token valid — bot "${me.username}" (${me.id})`)
-  // Only the Manager reads messages (its plugin holds the gateway); Specialists only write.
-  if (agent === 'manager' && !hasMessageContentIntent(app.flags)) {
-    log('⚠ Message Content Intent looks OFF — Bot tab → Privileged Gateway Intents → Message Content Intent (required: the Manager reads the messages)')
-  }
-  await gatewayLogin(token).then(
-    () => log('✔ activated on the gateway (required once before a bot can post)'),
-    e => log(`⚠ gateway activation failed: ${e.message}`),
-  )
-
-  updateSettings(workspace, s => {
-    s.bots = { ...s.bots, [agent]: { ...s.bots?.[agent], token_env: tokenEnv, user_id: me.id, app_id: app.id } }
+  const r = await registerBot({ instance, agent, token }).catch(e => {
+    if (e.name === 'DiscordError' && e.status === 401) throw new ConfigError(`The ${tokenEnv} token was refused by Discord (${e.message}) — reset it in the Developer Portal and try again`)
+    throw e
   })
-  instance = loadInstance(workspace, { repoDir })
-
-  const guild = instance.guildId
-  if (guild) {
-    try {
-      await client.patch(`/guilds/${guild}/members/@me`, { nick: agentName(agent) })
-      log(`✔ display name in the server set to "${agentName(agent)}"`)
-    } catch (e) {
-      if (e.status === 404 || e.code === 10004) log(`→ not in the server yet — invite it:\n  ${inviteUrl(app.id, agent)}`)
-      else log(`⚠ could not set the display name: ${e.message}`)
-    }
-  } else {
-    log(`→ invite it to your server:\n  ${inviteUrl(app.id, agent)}`)
-  }
-  return { agent, user_id: me.id, app_id: app.id }
+  log(`✔ token valid — bot "${r.username}" (${r.user_id})`)
+  if (r.activated) log('✔ activated on the gateway (required once before a bot can post)')
+  for (const w of r.warnings) log(`⚠ ${w}`)
+  if (r.in_server) log(`✔ display name in the server set to "${agentName(agent)}"`)
+  else if (r.invite_url) log(`→ ${r.in_server === false ? 'not in the server yet — invite it' : 'invite it to your server'}:\n  ${r.invite_url}`)
+  return { agent, user_id: r.user_id, app_id: r.app_id }
 }
 
 export default async function bot({ workspace, repoDir, sub, rest }) {

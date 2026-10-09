@@ -43,7 +43,15 @@ A role on a KB team with its own instructions, model and Discord identity.
 _Avoid_: bot, persona, assistant
 
 **Core agent**:
-One of the ten Agents every team starts with: Manager, KB Researcher, Web Researcher, Brainstormer, Artist, UX Expert, Marketing, Lawyer, Planner, Coder.
+One of the ten Agents CrelioBot ships: Manager, KB Researcher, Web Researcher, Brainstormer, Artist, UX Expert, Marketing, Lawyer, Planner, Coder.
+
+**Default team**:
+The Agents a new team starts with: the Manager, the KB Researcher, the Web Researcher and the Planner. Other Agents are enabled when someone needs them.
+_Avoid_: base team, starter pack
+
+**Enabled agent**:
+An Agent that is on a team right now: it has an Agent channel in the KB category and the Manager may dispatch it. Disabling it takes it off the team; its Agent bot stays.
+_Avoid_: active agent, installed agent
 
 **Custom agent**:
 An Agent a user adds to one KB's team (or to every team) with the agent creator.
@@ -60,6 +68,14 @@ _Avoid_: worker, sub-agent (a specialist runs as one, but the role is the concep
 **Agent bot**:
 The Discord bot application that gives an Agent its name, avatar and @mention. It carries no memory; the same Agent bot can speak for its Agent in several KBs.
 _Avoid_: webhook, persona
+
+**Team change**:
+A change to a team the owner asks for in Discord: enabling or disabling an Agent, creating or deleting a channel or role in the KB category, registering an Agent bot. It takes effect while the session runs, with no restart.
+_Avoid_: reconfiguration, admin action
+
+**Owner approval**:
+The owner's own Discord message that asks for a Team change or agrees to it. Every Team change names one, and the change is refused without it. It is not an Escalation: an Escalation asks for a decision the Agent lacks Evidence for.
+_Avoid_: confirmation, sign-off
 
 ### Discord layout
 

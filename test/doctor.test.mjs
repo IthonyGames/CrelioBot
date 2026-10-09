@@ -7,7 +7,7 @@ import { runDoctor } from '../src/commands/doctor.mjs'
 import { loadInstance } from '../src/instance.mjs'
 import { makeWorkspace, REPO } from './helpers.mjs'
 
-function fakeClients(instance, { noIntent = false, notInGuild = [], missingChannels = [] } = {}) {
+function fakeClients(instance, { noIntent = false, notInGuild = [], missingChannels = [], managerAdmin = true } = {}) {
   const byToken = Object.fromEntries(Object.entries(instance.settings.bots).map(([a, b]) => [`token-${b.token_env}`, a]))
   const channels = [instance.globalGeneralId, ...[...instance.kbs.values()].flatMap(k => [k.discord.general_id, ...Object.values(k.discord.agents)])]
     .filter(id => !missingChannels.includes(id)).map(id => ({ id }))
@@ -17,6 +17,8 @@ function fakeClients(instance, { noIntent = false, notInGuild = [], missingChann
       if (path === '/applications/@me') return { id: '1', flags: agent === 'manager' && noIntent ? 0 : 1 << 19 }
       if (path === `/guilds/${instance.guildId}`) { if (notInGuild.includes(agent)) throw new Error('Unknown Guild'); return { id: instance.guildId } }
       if (path === `/guilds/${instance.guildId}/channels`) return channels
+      if (path.startsWith(`/guilds/${instance.guildId}/members/`)) return { roles: ['900'] }
+      if (path === `/guilds/${instance.guildId}/roles`) return [{ id: instance.guildId, permissions: '1024' }, { id: '900', permissions: managerAdmin ? '8' : '117824' }]
       throw new Error(`unexpected ${path}`)
     },
   })
@@ -64,4 +66,13 @@ test('a Manager without Message Content Intent, a bot outside the server and a d
   assert.match(text, /Coder: not in the server/)
   assert.match(text, new RegExp(`#lawyer: channel ${gone} no longer exists`))
   assert.match(results.find(r => /Coder: not in the server/.test(r.m)).fix, /discord\.com\/oauth2\/authorize/)
+})
+
+test('a Manager that cannot build the layout is reported with the re-authorize link', async () => {
+  const { ws } = makeWorkspace({ kbs: ['alpha'] })
+  const instance = loadInstance(ws, { repoDir: REPO })
+  const results = await runDoctor({ workspace: ws, repoDir: REPO, env: fakeEnv(), clientFor: fakeClients(instance, { managerAdmin: false }) })
+  const r = results.find(x => /cannot create channels or roles/.test(x.m))
+  assert.ok(r, fails(results))
+  assert.match(r.fix, /permissions=8&guild_id=/)
 })

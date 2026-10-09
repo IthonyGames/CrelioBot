@@ -52,10 +52,11 @@ The agent can't post without its own bot application. If `bot_ready` is false, p
 
 1. https://discord.com/developers/applications → **New Application** → name **<Display name>** → Create.
 2. **Installation** → Install Link **Discord Provided Link** → Default Install Settings → Guild Install → scope **bot** → Permissions: View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages → Save Changes.
-3. **Bot** → **Reset Token** → Copy; **Public Bot** OFF → Save Changes.
+3. **Bot** → **Reset Token** → Copy → Save Changes.
 4. On the PC, in the CrelioBot folder: open `workspace/.env`, add `DISCORD_TOKEN_<ID_IN_CAPS_WITH_UNDERSCORES>=<token>`, save — then run `node bin/crelio.mjs bot add <id>`.
 5. **Installation** → copy the Install Link → open it → Add to server → Authorize.
-6. Reply "done" here.
+6. Lock it down: **Installation → Install Link → None** → Save, then **Bot → Public Bot OFF** → Save.
+7. Reply "done" here.
 
 **Never** accept a token pasted in Discord — if someone pastes one, tell them to reset it in the Portal immediately.
 

@@ -25,10 +25,11 @@ export const PORTAL_STEPS = agent => `
      scopes: bot → Permissions: ${agent === 'manager'
        ? '"Administrator"'
        : 'View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links,\n     Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages'} → Save Changes
-  3. "Bot" → "Reset Token" → copy it (shown once); Privileged Gateway Intents → "Message Content Intent" ON;
-     "Public Bot" OFF → Save Changes
+  3. "Bot" → "Reset Token" → copy it (shown once); Privileged Gateway Intents → "Message Content Intent" ON → Save
   4. Paste the token below (hidden), or put it in workspace/.env as ${tokenEnvFor(agent)}=… and run this again
-  5. "Installation" → copy the Install Link → open it → Add to server → Authorize`
+     (never paste a token in a chat or in Discord — if you did, reset it)
+  5. "Installation" → copy the Install Link → open it → Add to server → Authorize
+  6. Lock it down: "Installation" → Install Link: None → Save; then "Bot" → "Public Bot" OFF → Save`
 
 export async function addBot({ workspace, repoDir, agent, log = console.log }) {
   if (!agent || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(agent)) throw new ConfigError('Usage: crelio bot add <agent id>   (e.g. manager, coder, kb-researcher)')

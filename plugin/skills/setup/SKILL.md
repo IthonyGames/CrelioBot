@@ -36,10 +36,10 @@ The Manager bot listens to every team's channels and **builds the Discord layout
 4. Left menu **Bot**:
    - **Reset Token** → **Yes, do it!** → **Copy** (shown once; if lost, reset again).
    - **Privileged Gateway Intents** → turn ON **Message Content Intent** (without it the bot receives empty messages).
-   - **Public Bot** → turn OFF (only the app's owner can add it to servers — safer).
    - **Save Changes**.
-5. Put the token in `workspace/.env` on the line `DISCORD_TOKEN_MANAGER=` (open the file for them in their editor), save.
+5. Put the token in `workspace/.env` on the line `DISCORD_TOKEN_MANAGER=` (open the file for them in their editor), save. If they paste a token in the chat anyway, tell them it is exposed and must be reset before use — don't use it.
 6. Back in **Installation**, copy the **Install Link** → open it → **Add to server** → pick the server → **Authorize** (the Administrator box is pre-checked).
+7. Lock it down **after** it is in the server: **Installation → Install Link → None** → Save, then **Bot → Public Bot → OFF** → Save (only the owner can add it anywhere). The Portal blocks turning Public Bot off while an install link is set, hence this order.
 
 Then run `node bin/crelio.mjs bot add manager`: it validates the token, checks the intent and activates the bot (it also prints an equivalent invite link with Administrator, as a fallback if the Portal link wasn't used). Then:
 - `node bin/crelio.mjs discord servers` → confirm which server with the user
@@ -50,7 +50,7 @@ Then run `node bin/crelio.mjs bot add manager`: it validates the token, checks t
 
 Each agent speaks through its own bot (people can @mention it; it can send Voice notes). Nine Core Specialists: kb-researcher, web-researcher, brainstormer, artist, ux-expert, marketing, lawyer, planner, coder.
 
-- Same Portal steps as the Manager for each, **except the permissions**: in **Installation → Default Install Settings → Guild Install → bot → Permissions**, check only **View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages** — no Administrator. (Message Content Intent is not needed for Specialists but harmless.) Users can reuse bot applications they already have — renaming them is fine.
+- Same Portal steps as the Manager for each (including the lock-down of step 7 once the bot is in the server), **except the permissions**: in **Installation → Default Install Settings → Guild Install → bot → Permissions**, check only **View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Attach Files, Read Message History, Add Reactions, Use External Emojis, Send Voice Messages** — no Administrator. (Message Content Intent is not needed for Specialists but harmless.) Users can reuse bot applications they already have — renaming them is fine.
 - Fastest path: create them all, paste all tokens into `workspace/.env` (`DISCORD_TOKEN_KB_RESEARCHER=`, `DISCORD_TOKEN_WEB_RESEARCHER=`, …), save, then you run `bot add <agent>` for each and give the user the invite links (Specialists get only the permissions they need: talk, threads, files, reactions, voice messages).
 - Discord seems to cap applications per account (around 25). Ten bots fit; more may need a Developer Team.
 - An agent without its bot can't post: you may continue setup and add missing bots later (`doctor` lists them).

@@ -14,10 +14,11 @@ Commands below are run from the CrelioBot folder: `node bin/crelio.mjs …` (sho
 
 1. https://discord.com/developers/applications → **New Application** → "Manager" → Create.
 2. **Installation** → Install Link: **Discord Provided Link** → Default Install Settings → **Guild Install** → scopes **bot** → Permissions **Administrator** → Save Changes.
-3. **Bot** → **Reset Token** → copy; **Message Content Intent** ON; **Public Bot** OFF → Save Changes.
-4. Put the token in `workspace/.env`: `DISCORD_TOKEN_MANAGER=…`
+3. **Bot** → **Reset Token** → copy; **Message Content Intent** ON → Save Changes.
+4. Put the token in `workspace/.env`: `DISCORD_TOKEN_MANAGER=…` (never paste a token in a chat — if you did, reset it).
 5. **Installation** → open the Install Link → Add to server → Authorize.
-6. `crelio bot add manager` → `crelio discord servers` → `crelio discord use <server id>` → `crelio bot add manager` (sets its display name).
+6. Lock it down: **Installation → Install Link → None** → Save, then **Bot → Public Bot OFF** → Save (the Portal only allows Public Bot off once no install link is set).
+7. `crelio bot add manager` → `crelio discord servers` → `crelio discord use <server id>` → `crelio bot add manager` (sets its display name).
 
 ## 3. Specialist bots
 

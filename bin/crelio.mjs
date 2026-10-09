@@ -89,6 +89,8 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(err instanceof ConfigError ? `\n✖ ${err.message}\n` : err)
+  const known = err instanceof ConfigError || err?.name === 'DiscordError'
+  console.error(known ? `\n✖ ${err.message}\n` : err)
+  if (err?.name === 'DiscordError' && err.status === 403) console.error('  The Manager bot needs Administrator in the server — run "crelio doctor" for the fix.\n')
   process.exit(1)
 })

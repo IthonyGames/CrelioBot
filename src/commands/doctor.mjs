@@ -57,6 +57,22 @@ export async function runDoctor({ workspace, repoDir, clientFor = t => discordCl
     }
   }
 
+  // --- the Manager must be able to build the layout (Administrator, or at least Manage Channels + Manage Roles)
+  const managerId = instance.settings.bots?.manager?.user_id
+  if (managerToken && instance.guildId && managerId) {
+    try {
+      const client = clientFor(managerToken)
+      const [member, roles] = await Promise.all([client.get(`/guilds/${instance.guildId}/members/${managerId}`), client.get(`/guilds/${instance.guildId}/roles`)])
+      let perms = BigInt(roles.find(r => r.id === instance.guildId)?.permissions ?? 0)
+      for (const r of roles) if (member.roles?.includes(r.id)) perms |= BigInt(r.permissions)
+      const admin = (perms & 8n) !== 0n
+      const canBuild = admin || ((perms & 16n) !== 0n && (perms & (1n << 28n)) !== 0n)
+      if (admin) ok('Manager: Administrator in the server')
+      else if (canBuild) warn('Manager: no Administrator (Manage Channels + Manage Roles are enough to build the layout)', 'Give it Administrator to let it manage threads everywhere')
+      else fail('Manager: cannot create channels or roles in the server', `Re-authorize with Administrator: ${inviteUrl(instance.settings.bots.manager.app_id ?? managerId, 'manager')}&guild_id=${instance.guildId} — or Server Settings → Roles → its role → Administrator`)
+    } catch {}
+  }
+
   // --- channels
   if (managerToken && instance.guildId) {
     try { guildChannels = new Set((await clientFor(managerToken).get(`/guilds/${instance.guildId}/channels`)).map(c => c.id)) } catch {}

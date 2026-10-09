@@ -15,9 +15,10 @@ const TOOLS = [
   {
     name: 'post',
     description:
-      'Post a message in Discord as an agent, through that agent\'s own bot. Use it for everything the team says in Discord — never the discord plugin\'s reply tool except for one-line acknowledgements from the Manager. ' +
-      'Long text is split automatically; link previews are suppressed. Mention a person with <@user_id> and an agent with its role <@&role_id> or bot <@bot_user_id>. ' +
-      'files: absolute paths (≤ 20 MiB each) to attach to the last message.',
+      'Post a message in Discord as an agent, through that agent\'s own bot. Use it for everything the team says in Discord — never the discord plugin\'s reply tool. ' +
+      'Keep it to a few lines: people read Discord on their phone; details go in your brief to your caller or in an attached file. ' +
+      'A person is notified only when the text mentions them (<@user_id>) — replying to their message does not ping; mention them only when they must act or the Task is done. Mention an agent with its role <@&role_id> or bot <@bot_user_id>. ' +
+      'Long text is split automatically; link previews are suppressed. files: absolute paths (≤ 20 MiB each) to attach to the last message.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -25,21 +26,21 @@ const TOOLS = [
         chat_id: chatProp,
         text: { type: 'string' },
         files: { type: 'array', items: { type: 'string' } },
-        reply_to: { type: 'string', description: 'message_id to reply to (e.g. a person\'s question)' },
-        silent: { type: 'boolean', description: 'true = no push notification (progress updates)' },
+        reply_to: { type: 'string', description: 'message_id to reply to (e.g. a person\'s question) — does not ping its author' },
+        silent: { type: 'boolean', description: 'true = no push notification, even for mentions (progress notes)' },
       },
       required: ['agent', 'chat_id'],
     },
   },
   {
     name: 'edit',
-    description: 'Edit a message an agent posted earlier (progress updates). Edits do not notify anyone — post a new message when work completes.',
-    inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, message_id: { type: 'string' }, text: { type: 'string' } }, required: ['agent', 'chat_id', 'message_id', 'text'] },
+    description: 'Edit a message an agent posted earlier (progress updates). Edits do not notify anyone — post a new message when work completes. agent defaults to "manager".',
+    inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, message_id: { type: 'string' }, text: { type: 'string' } }, required: ['chat_id', 'message_id', 'text'] },
   },
   {
     name: 'react',
-    description: 'Add an emoji reaction as an agent (e.g. ✅ when done, 👀 when picked up).',
-    inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, message_id: { type: 'string' }, emoji: { type: 'string' } }, required: ['agent', 'chat_id', 'message_id', 'emoji'] },
+    description: 'Add an emoji reaction as an agent — the quiet way to say "seen" (👀), "done" (✅) or "ok" (👍) without a message. agent defaults to "manager".',
+    inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, message_id: { type: 'string' }, emoji: { type: 'string' } }, required: ['chat_id', 'message_id', 'emoji'] },
   },
   {
     name: 'thread_open',
@@ -141,7 +142,8 @@ const TOOLS = [
   },
   {
     name: 'route',
-    description: 'Router: post a request from the Global General into a KB\'s General (as the Manager bot, quoting the author and linking the original). Returns chat_id/message_id of the posted copy and the KB session name — then SendMessage that session so it handles it.',
+    description: 'Router: post a request from the Global General into a KB\'s General (as that KB\'s Manager bot, silently, naming the author without pinging them, linking the original and copying its attachments), and mark the request with ✅. ' +
+      'That ✅ is your whole confirmation: post nothing else in the Global General — the KB\'s Task thread is where the author gets pinged. Returns chat_id/message_id of the posted copy and the KB session name — then SendMessage that session so it handles it.',
     routerOnly: true,
     inputSchema: {
       type: 'object',
@@ -200,8 +202,10 @@ async function handle(msg) {
     if (method === 'tools/call') {
       const fn = visibleTools().some(t => t.name === params?.name) ? tools?.[params.name] : undefined
       if (!fn) throw new Error(`unknown tool: ${params?.name}`)
+      const args = { ...params.arguments }
+      if (args.chat_id === undefined && args.thread_id !== undefined) args.chat_id = args.thread_id // thread_open returns thread_id
       try {
-        const out = await fn(params.arguments ?? {})
+        const out = await fn(args)
         return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(out) }] } })
       } catch (e) {
         const text = e instanceof ToolError || e.name === 'DiscordError' || e.name === 'ConfigError' ? e.message : `${e.name}: ${e.message}`

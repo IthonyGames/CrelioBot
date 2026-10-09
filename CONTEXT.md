@@ -110,6 +110,14 @@ _Avoid_: approval, gate (a gate is fixed; an Escalation is triggered by missing 
 **Requester**:
 The person who asked for a Task; the default target of its Escalations.
 
+**Brief**:
+What an Agent hands to the Agent that called it when it finishes — the full detail of its work. Its Discord post carries only the headline.
+_Avoid_: report, handoff note
+
+**Ping**:
+A notification a person gets because a post mentions them. A Task pings its Requester when it starts, for each question that needs them, and when it is done — never otherwise.
+_Avoid_: tag (tagging an Agent is how people follow hand-offs; pinging a person costs their attention)
+
 **Task adapter**:
 How a KB session reads and writes the KB's own task system (a local board, Notion, Motion, markdown tickets, or a KB skill).
 _Avoid_: task backend, integration

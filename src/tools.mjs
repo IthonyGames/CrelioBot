@@ -20,6 +20,8 @@ export class ToolError extends Error { name = 'ToolError' }
 
 const MESSAGE_TYPES = new Set([0, 19]) // default and reply; skip system messages
 const HISTORY_BUDGET = 60_000
+// Beyond this, a chat post is a document: the post result tells the agent so (team protocol §2).
+export const LONG_POST = 900
 
 function need(value, name) {
   if (value === undefined || value === null || value === '') throw new ToolError(`${name} is required`)
@@ -91,46 +93,60 @@ export function createTools({
     })
   }
 
+  /** Sends text (split in ≤ 2000-character messages) with the attachments on the last one; returns the message ids. */
+  async function send(client, channelId, text, { attachments = [], flags = FLAGS.SUPPRESS_EMBEDS, allowedMentions, replyTo } = {}) {
+    const chunks = splitMessage(text ?? '')
+    if (!chunks.length && !attachments.length) throw new ToolError('text or files is required')
+    if (!chunks.length) chunks.push('')
+    const ids = []
+    for (const [i, content] of chunks.entries()) {
+      const body = { content, flags, allowed_mentions: allowedMentions }
+      if (i === 0 && replyTo) body.message_reference = { message_id: replyTo, fail_if_not_exists: false }
+      let msg
+      if (i === chunks.length - 1 && attachments.length) {
+        const form = new FormData()
+        form.append('payload_json', JSON.stringify({ ...body, attachments: attachments.map((f, n) => ({ id: n, filename: f.name })) }))
+        attachments.forEach((f, n) => form.append(`files[${n}]`, new Blob([f.data]), f.name))
+        msg = await client.postForm(`/channels/${channelId}/messages`, form)
+      } else {
+        msg = await client.post(`/channels/${channelId}/messages`, body)
+      }
+      ids.push(msg.id)
+    }
+    return ids
+  }
+
   // ---------------------------------------------------------------- tools
   async function post({ agent, chat_id, text, files, reply_to, silent }) {
     need(agent, 'agent')
     const t = await target(chat_id)
     const client = botClient(agent)
-    const attachments = readFiles(files)
-    const chunks = splitMessage(text ?? '')
-    if (!chunks.length && !attachments.length) throw new ToolError('text or files is required')
-    if (!chunks.length) chunks.push('')
-    const flags = FLAGS.SUPPRESS_EMBEDS | (silent ? FLAGS.SUPPRESS_NOTIFICATIONS : 0)
-    const ids = []
-    for (const [i, content] of chunks.entries()) {
-      const body = { content, flags, allowed_mentions: { parse: ['users', 'roles'], replied_user: true } }
-      if (i === 0 && reply_to) body.message_reference = { message_id: snowflake(reply_to, 'reply_to'), fail_if_not_exists: false }
-      const last = i === chunks.length - 1
-      let msg
-      if (last && attachments.length) {
-        const form = new FormData()
-        form.append('payload_json', JSON.stringify({ ...body, attachments: attachments.map((f, n) => ({ id: n, filename: f.name })) }))
-        attachments.forEach((f, n) => form.append(`files[${n}]`, new Blob([f.data]), f.name))
-        msg = await client.postForm(`/channels/${t.id}/messages`, form)
-      } else {
-        msg = await client.post(`/channels/${t.id}/messages`, body)
-      }
-      ids.push(msg.id)
+    const ids = await send(client, t.id, text, {
+      attachments: readFiles(files),
+      flags: FLAGS.SUPPRESS_EMBEDS | (silent ? FLAGS.SUPPRESS_NOTIFICATIONS : 0),
+      // A person is notified only when the text mentions them: replying to their message does not ping.
+      allowedMentions: { parse: ['users', 'roles'], replied_user: false },
+      replyTo: reply_to ? snowflake(reply_to, 'reply_to') : undefined,
+    })
+    const length = String(text ?? '').length
+    return {
+      chat_id: t.id,
+      message_ids: ids,
+      ...(length > LONG_POST ? { note: `${length} characters — too long for a chat post. Keep posts to a few lines; details go in your brief to the agent that called you, or in an attached file.` } : {}),
     }
-    return { chat_id: t.id, message_ids: ids }
   }
 
-  async function edit({ agent, chat_id, message_id, text }) {
+  async function edit({ agent = 'manager', chat_id, message_id, text }) {
     const t = await target(chat_id)
     const [content, ...overflow] = splitMessage(need(text, 'text'))
     if (overflow.length) throw new ToolError('edited text must fit in one message (2000 characters)')
-    await botClient(need(agent, 'agent')).patch(`/channels/${t.id}/messages/${snowflake(message_id, 'message_id')}`, { content, flags: FLAGS.SUPPRESS_EMBEDS, allowed_mentions: { parse: ['users', 'roles'] } })
+    await botClient(agent).patch(`/channels/${t.id}/messages/${snowflake(message_id, 'message_id')}`, { content, flags: FLAGS.SUPPRESS_EMBEDS, allowed_mentions: { parse: ['users', 'roles'] } })
     return { edited: true }
   }
 
-  async function react({ agent, chat_id, message_id, emoji }) {
+  async function react({ agent = 'manager', chat_id, message_id, emoji }) {
     const t = await target(chat_id)
-    await botClient(need(agent, 'agent')).put(`/channels/${t.id}/messages/${snowflake(message_id, 'message_id')}/reactions/${encodeURIComponent(need(emoji, 'emoji'))}/@me`)
+    await botClient(agent).put(`/channels/${t.id}/messages/${snowflake(message_id, 'message_id')}/reactions/${encodeURIComponent(need(emoji, 'emoji'))}/@me`)
     return { reacted: true }
   }
 
@@ -317,20 +333,56 @@ export function createTools({
   }
   const link = (channelId, messageId) => `https://discord.com/channels/${instance.guildId}/${channelId}${messageId ? `/${messageId}` : ''}`
 
+  /**
+   * One notification per routed request: the copy in the KB General is silent and names the author without
+   * mentioning them, the request gets a ✅ instead of a confirmation message, and the KB's Task thread is where
+   * the author is pinged. The request's attachments travel with it (the KB session can't read the Global General).
+   */
   async function route({ kb, text, author_id, author_name, source_message_id }) {
     routerOnly('route')
     const profile = instance.kb(need(kb, 'kb'))
     const general = profile.discord?.general_id
     if (!general) throw new ToolError(`KB "${profile.id}" has no General channel yet — the owner runs "crelio discord provision"`)
-    const who = author_id ? `<@${snowflake(author_id, 'author_id')}>` : (author_name ?? 'someone')
-    const source = source_message_id ? ` · [original](${link(instance.globalGeneralId, snowflake(source_message_id, 'source_message_id'))})` : ''
+    if (author_id) snowflake(author_id, 'author_id')
+    const sourceId = source_message_id ? snowflake(source_message_id, 'source_message_id') : null
+    let source = null
+    if (sourceId) {
+      try { source = await manager().get(`/channels/${instance.globalGeneralId}/messages/${sourceId}`) } catch {}
+    }
+    const attachments = []
+    const skipped = []
+    for (const a of source?.attachments ?? []) {
+      if (a.size > MAX_FILE_BYTES) { skipped.push(a.filename); continue }
+      const res = await fetchImpl(a.url).catch(() => null)
+      if (res?.ok) attachments.push({ name: a.filename, data: Buffer.from(await res.arrayBuffer()) })
+      else skipped.push(a.filename)
+    }
+    const who = author_name ?? source?.author?.global_name ?? source?.author?.username ?? 'someone'
+    const origin = sourceId ? ` · [Global General](${link(instance.globalGeneralId, sourceId)})` : ''
     const quoted = String(need(text, 'text')).split('\n').map(l => `> ${l}`).join('\n')
     const client = clientFor(instance.requireToken(profile.id, 'manager'))
-    const ids = []
-    for (const content of splitMessage(`📨 **From the Global General** — ${who}${source}\n${quoted}`)) {
-      ids.push((await client.post(`/channels/${general}/messages`, { content, flags: FLAGS.SUPPRESS_EMBEDS, allowed_mentions: { parse: [] } })).id)
+    const ids = await send(client, general, `📨 **${who}**${origin}\n${quoted}`, {
+      attachments,
+      flags: FLAGS.SUPPRESS_EMBEDS | FLAGS.SUPPRESS_NOTIFICATIONS,
+      allowedMentions: { parse: [] },
+    })
+    let reacted = false
+    if (sourceId) {
+      try {
+        await manager().put(`/channels/${instance.globalGeneralId}/messages/${sourceId}/reactions/${encodeURIComponent('✅')}/@me`)
+        reacted = true
+      } catch {}
     }
-    return { kb: profile.id, chat_id: general, message_id: ids[0], session_name: `crelio-${profile.id}`, link: link(general, ids[0]) }
+    return {
+      kb: profile.id,
+      chat_id: general,
+      message_id: ids[0],
+      session_name: `crelio-${profile.id}`,
+      link: link(general, ids[0]),
+      attachments: attachments.map(f => f.name),
+      ...(skipped.length ? { attachments_not_copied: skipped } : {}),
+      request_marked: reacted ? '✅ added to the request — post nothing more in the Global General' : 'could not react to the request',
+    }
   }
 
   async function instance_status() {

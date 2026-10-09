@@ -30,11 +30,13 @@ No process of ours holds the Discord gateway: each session's official plugin doe
 4. Escalation: a Specialist posts numbered questions tagging the person, returns `needs-input` with the message id; the Manager records `waiting_on`. The person replies under the question → the plugin delivers it → `whereami` shows `replied_to.agent` → the Manager continues that subagent (`SendMessage`) with the answer.
 5. Summary, ticket update, learnings, `thread_close`.
 
+Notifications: a Task pings its Requester when it starts (the thread opener), for each question that needs them, and when it is done (the summary). Everything else is short and quiet — `post` never pings the author of a message it replies to, only the people its text mentions, and flags posts over 900 characters back to the agent; the details travel between agents in their briefs (the final answer each returns).
+
 Agents never talk to each other *through* Discord (the official plugin drops bot messages, ADR-0002): they call each other inside the session and *show* the conversation in Discord.
 
 ## Router → KB
 
-The Router posts the request in the KB's General with `route` (as that KB's Manager bot, quoting the author) and then sends the KB session a cross-session message (`SendMessage` to `crelio-<kb>`, local named pipe / Unix socket) naming the posted message. KB sessions accept cross-session messages (`crossSessionInbound: accept` in their generated settings).
+The Router posts the request in the KB's General with `route` (as that KB's Manager bot, silently, naming the author without a mention and copying the request's attachments), puts ✅ on the original instead of replying, and then sends the KB session a cross-session message (`SendMessage` to `crelio-<kb>`, local named pipe / Unix socket) naming the posted message. The KB's Task thread opener is the author's one ping. KB sessions accept cross-session messages (`crossSessionInbound: accept` in their generated settings).
 
 The launcher strips the parent session's identity variables (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, …) from every session it starts: inherited, they make a session believe it is nested, and it never registers for cross-session messages (found in spike 01).
 

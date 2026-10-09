@@ -18,11 +18,13 @@ export function detectKb(path) {
 
   let tasks = { adapter: 'none', notes: '' }
   const backend = config.tasks?.backend
-  const hasBoard = has('board.json') || has('operations/project-management/board.json') || (has('scripts') && readdirSync(join(path, 'scripts')).some(f => /board/i.test(f)))
+  const hasBoard = has('board.json') || has('operations/project-management/board.json') || (has('scripts') && readdirSync(join(path, 'scripts')).some(f => /^(local_)?board/i.test(f)))
+  const ticketDirs = has('.scratch') ? readdirSync(join(path, '.scratch')).filter(d => existsSync(join(path, '.scratch', d, 'issues'))) : []
   if (backend === 'notion' || /notion/i.test(claudeMd.match(/task[^\n]*notion|notion[^\n]*task/i)?.[0] ?? '')) tasks = { adapter: 'notion', notes: 'Tasks database in Notion (see CLAUDE.md)' }
   else if (backend === 'motion') tasks = { adapter: 'motion', notes: '' }
-  else if (hasBoard || backend === 'local') tasks = { adapter: 'local-board', notes: hasBoard ? 'board.json via the KB board helper' : '' }
-  else if (has('.scratch')) tasks = { adapter: 'markdown-tickets', notes: '.scratch/<feature>/issues/NN-slug.md' }
+  else if (hasBoard) tasks = { adapter: 'local-board', notes: 'board.json via the KB board helper' }
+  else if (ticketDirs.length) tasks = { adapter: 'markdown-tickets', notes: `.scratch/${ticketDirs[0]}/issues/NN-slug.md (one file per ticket, Status: line)` }
+  else if (backend === 'local') tasks = { adapter: 'local-board', notes: '' }
   const taskSkill = has('.claude/skills') && readdirSync(join(path, '.claude/skills')).find(s => /^(tache|tasks?|task-sync|.*-sync)$/i.test(s))
   if (taskSkill) tasks = { adapter: `skill:${taskSkill}`, notes: tasks.notes }
 

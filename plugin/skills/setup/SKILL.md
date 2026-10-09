@@ -27,7 +27,7 @@ The user needs a server where they are an administrator. New one: Discord → "+
 The Manager bot listens to every team's channels and **builds the Discord layout itself**, so it is invited with **Administrator**. Walk the user through the Developer Portal, exactly:
 
 1. Open https://discord.com/developers/applications → **New Application** → name: **Manager** (or the name they want people to see) → accept the terms → **Create**.
-2. Optional: **General Information** → upload an **App Icon** (the avatar people see).
+2. Optional: **General Information** → upload an **App Icon** (the avatar people see). Every Core agent has one in `assets/avatars/<agent id>.png`.
 3. Left menu **Installation**:
    - **Installation Contexts** → keep **Guild Install** checked (User Install is not needed).
    - **Install Link** → **Discord Provided Link**.

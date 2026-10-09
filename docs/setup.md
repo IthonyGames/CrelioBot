@@ -12,7 +12,7 @@ Commands below are run from the CrelioBot folder: `node bin/crelio.mjs …` (sho
 
 ## 2. The Manager bot
 
-1. https://discord.com/developers/applications → **New Application** → "Manager" → Create.
+1. https://discord.com/developers/applications → **New Application** → "Manager" → Create. Optional: **General Information → App Icon** → the agent's avatar from `assets/avatars/` (`manager.png` here, see [agent avatars](agent-avatars.md)).
 2. **Installation** → Install Link: **Discord Provided Link** → Default Install Settings → **Guild Install** → scopes **bot** → Permissions **Administrator** → Save Changes.
 3. **Bot** → **Reset Token** → copy; **Message Content Intent** ON → Save Changes.
 4. Put the token in `workspace/.env`: `DISCORD_TOKEN_MANAGER=…` (never paste a token in a chat — if you did, reset it).

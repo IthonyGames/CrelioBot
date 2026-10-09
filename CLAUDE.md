@@ -15,6 +15,7 @@ CrelioBot turns a Discord server into the workspace of Claude Code agent teams, 
 - `hooks/` — guard hooks for the guarded permission level (referenced by generated settings).
 - `plugin/` — the Claude Code plugin: agents, skills, SessionStart hook.
 - `templates/workspace/` — what setup copies into `workspace/` (git-ignored, ADR-0004).
+- `assets/avatars/` — the Core agents' avatars (App Icons for their Agent bots); how they are made: `docs/agent-avatars.md`.
 
 ## Rules
 

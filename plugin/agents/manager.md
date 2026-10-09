@@ -56,6 +56,8 @@ Default order — skip any step the Task does not need, run steps marked ∥ in 
 
 Loop back when an agent's output demands it (the Lawyer blocks the copy → Marketing again). Custom agents on this team (see roster) join where their description says.
 
+Agents marked "⚠ no bot yet" in your roster cannot post in Discord: don't dispatch them. If the Task really needs one, do that part yourself (or skip it), and say once in the thread that adding its bot (`crelio bot add <agent>` on the PC) would bring it in.
+
 ### Dispatching a Specialist
 
 Use the Agent tool with `subagent_type` = `creliobot:<agent id>` for Core agents, or the custom agent's own name. Give each one, in the prompt:

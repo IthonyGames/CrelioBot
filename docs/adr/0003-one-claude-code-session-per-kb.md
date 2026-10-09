@@ -1,0 +1,3 @@
+# One interactive Claude Code session per KB, with the Manager as its main thread
+
+Each KB is served by exactly one long-running `claude` CLI session started in the KB folder, whose main thread runs as the Manager agent; Specialists run as subagents of that session (they may call each other, up to Claude Code's nesting limit). We rejected one session per Agent (ten times the cost and no shared Task context), Claude Code agent teams (experimental, can't be resumed, unsuited to always-on use) and the Claude Agent SDK (third-party products may not use claude.ai subscription login, so every user would need an API key). Driving the real CLI keeps each user on their own Claude login and gives every KB its own isolated context.

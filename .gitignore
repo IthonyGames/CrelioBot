@@ -1,0 +1,7 @@
+# Instance data — never published (ADR-0004)
+workspace/*
+!workspace/README.md
+
+node_modules/
+*.log
+.DS_Store

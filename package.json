@@ -1,0 +1,26 @@
+{
+  "name": "creliobot",
+  "version": "0.1.0",
+  "description": "Turn a Discord server into the workspace of Claude Code agent teams — one team, one session and one category per knowledge base.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "crelio": "bin/crelio.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "start": "node bin/crelio.mjs start",
+    "stop": "node bin/crelio.mjs stop",
+    "doctor": "node bin/crelio.mjs doctor"
+  },
+  "keywords": [
+    "claude-code",
+    "discord",
+    "agents",
+    "multi-agent",
+    "knowledge-base"
+  ]
+}

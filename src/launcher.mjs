@@ -48,13 +48,14 @@ export function findExecutable(name, env = process.env) {
 
 function stopFlag(instance) { return join(instance.workspaceDir, 'state', 'STOP') }
 
-function spawnClaude(claudePath, session) {
-  const opts = { cwd: session.cwd, env: session.env, stdio: 'inherit' }
+/** Runs an interactive claude in this console (stdio inherited). */
+export function spawnClaude(claudePath, { args, cwd, env }) {
+  const opts = { cwd, env, stdio: 'inherit' }
   // Node refuses to spawn .cmd/.bat directly on Windows; go through cmd.exe with our own quoting.
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)) {
-    return spawn('cmd.exe', ['/d', '/s', '/c', `"${windowsCommandLine(claudePath, session.args)}"`], { ...opts, windowsVerbatimArguments: true })
+    return spawn('cmd.exe', ['/d', '/s', '/c', `"${windowsCommandLine(claudePath, args)}"`], { ...opts, windowsVerbatimArguments: true })
   }
-  return spawn(claudePath, session.args, opts)
+  return spawn(claudePath, args, opts)
 }
 
 /** The restart loop for one session (runs inside its window). */

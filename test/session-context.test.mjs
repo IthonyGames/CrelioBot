@@ -61,6 +61,8 @@ test('a KB session starts knowing its team, Schedules, open threads and Team lea
   assert.match(out, /requester <@42>/)
   assert.match(out, /kb-researcher \(agent\).*Prices live in product\/pricing\.md/)
   assert.match(out, /Check copy before posting/)
+  assert.match(out, /## KB General — last 5 messages\n.*Build the pricing page/)
+  assert.match(out, /Do not resume anything on your own/)
   assert.ok(out.length <= 9000)
 })
 

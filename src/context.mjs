@@ -44,10 +44,23 @@ export async function sessionContext({ instance, sessionId, tools }) {
   // Open threads, most recent first, with their last messages.
   let threads = []
   try { threads = (await tools.thread_list({})).threads } catch (e) { out.push('', `## Open threads\nCould not read them at start (${e.message}). Use thread_list.`) }
+  out.push('', '## After a restart',
+    'This session just (re)started: subagents that were running are gone. Do not resume anything on your own.',
+    '- When the next message continues an unfinished Task (same thread, or clearly the same subject), read its full history with thread_history and continue it from where it stopped — re-dispatch the agent that was working.',
+    '- When it is a new request, ignore the unfinished ones and handle it as new.')
+
+  // Last messages of the General channel (KB General, or the Global General for the Router).
+  const generalId = isRouter ? instance.globalGeneralId : team.kb_general_id
+  if (generalId) {
+    try {
+      const h = await tools.thread_history({ chat_id: generalId, limit: LAST_MESSAGES })
+      out.push('', `## ${isRouter ? 'Global' : 'KB'} General — last ${LAST_MESSAGES} messages`, ...(h.messages.length ? h.messages.map(m => (m.length > 280 ? m.slice(0, 280) + '…' : m)) : ['(none)']))
+    } catch {}
+  }
+
   if (threads.length) {
     threads.sort((a, b) => (BigInt(b.last_message_id ?? b.thread_id) > BigInt(a.last_message_id ?? a.thread_id) ? 1 : -1))
-    out.push('', '## Open threads (read the full history with thread_history before acting in one)',
-      'After a restart, subagents that were running are gone: re-dispatch from the history when work was in progress.')
+    out.push('', `## Open threads — last ${LAST_MESSAGES} messages each (full history: thread_history)`)
     for (const t of threads.slice(0, MAX_THREADS)) {
       const meta = [t.kind, t.channel, t.task_id && `task ${t.task_id}`, t.requester && `requester <@${t.requester}>`, t.hops !== undefined && `hops ${t.hops}`, t.waiting_on && `waiting on ${JSON.stringify(t.waiting_on)}`].filter(Boolean).join(' · ')
       out.push(`### «${t.name}» — chat_id ${t.thread_id}`, meta)

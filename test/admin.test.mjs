@@ -108,6 +108,30 @@ test('provision_agent registers a Custom agent and creates its channel and role,
   assert.ok(loadInstance(ws, { repoDir: REPO }).agentsFor('alpha').includes('video-editor'))
 })
 
+test('provision_agent writes the definition into the KB, or into the Workspace for every KB from the Router', async () => {
+  const { ws, instance, fake, env } = await setup()
+  const def = id => `---\nname: ${id}\ndescription: Video editor on a CrelioBot team — cuts and captions videos.\nmodel: sonnet\n---\n\nYou are the **Video Editor**.\n`
+  const kb = startMcp(env('alpha'))
+  const bad = await kb.call('provision_agent', { agent: 'video-editor', definition: 'no frontmatter' })
+  const core = await kb.call('provision_agent', { agent: 'coder', definition: def('coder') })
+  const ok = await kb.call('provision_agent', { agent: 'video-editor', definition: def('video-editor') })
+  await kb.close()
+  const router = startMcp(env('router'))
+  const shared = await router.call('provision_agent', { agent: 'translator', definition: def('translator') })
+  await router.close(); await fake.close()
+  assert.match(bad.text, /frontmatter/)
+  assert.match(core.text, /Core agent/)
+  assert.equal(ok.isError, false, ok.text)
+  assert.match(readFileSync(join(instance.kb('alpha').path, '.claude', 'agents', 'video-editor.md'), 'utf8'), /name: video-editor/)
+  assert.equal(shared.isError, false, shared.text)
+  assert.ok(shared.data.channels.alpha.channel_id && shared.data.channels.beta.channel_id, 'a channel in every KB')
+  assert.match(readFileSync(join(ws, 'plugin', 'agents', 'translator.md'), 'utf8'), /name: translator/)
+  assert.equal(JSON.parse(readFileSync(join(ws, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8')).name, 'crelio-workspace')
+  const after = loadInstance(ws, { repoDir: REPO })
+  assert.ok(after.agentsFor('beta').includes('translator'))
+  assert.ok(!after.agentsFor('beta').includes('video-editor'))
+})
+
 test('restart_session ends the recorded session process so the launcher restarts it', async () => {
   const { instance, fake, env } = await setup()
   const dummy = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])

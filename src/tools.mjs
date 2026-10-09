@@ -2,7 +2,7 @@
 // Every tool acts only inside its session's scope: a KB session's category (KB General, Agent
 // channels and their threads); the Router's Global General.
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { agentName, loadInstance, ROUTER, updateKbProfile, updateSettings, CORE_AGENTS } from './instance.mjs'
 import { isSessionProcess, killSessionProcess } from './launcher.mjs'
@@ -380,34 +380,64 @@ export function createTools({
     throw new ToolError('action must be list, add or remove')
   }
 
-  async function provision_agent({ agent, scope = 'kb' }) {
-    if (isRouter) throw new ToolError('Agents belong to KB teams')
+  /**
+   * Agent creator: write a Custom agent's definition, register it, and create its channel and role.
+   * A KB session creates agents for its own KB (definition in <KB>/.claude/agents/); the Router creates
+   * agents for every KB (definition in <Workspace>/plugin/agents/, channel + role in every category).
+   * The tool writes the definition itself: .claude/ edits are protected in guarded sessions.
+   */
+  async function provision_agent({ agent, definition }) {
     const id = String(need(agent, 'agent')).toLowerCase()
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id) || id === 'manager' || id === ROUTER) throw new ToolError('agent must be a lowercase id with letters, digits and dashes (not manager/router)')
-    if (!CORE_AGENTS.includes(id)) {
+    const isCore = CORE_AGENTS.includes(id)
+
+    if (definition !== undefined) {
+      if (isCore) throw new ToolError(`"${id}" is a Core agent — pick another id for a Custom agent`)
+      const text = String(definition)
+      const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+      if (!front || !new RegExp(`^name:\\s*${id}\\s*$`, 'm').test(front[1]) || !/^description:\s*\S/m.test(front[1])) {
+        throw new ToolError(`definition must start with a frontmatter block containing "name: ${id}" and a description`)
+      }
+      const file = isRouter
+        ? join(instance.workspaceDir, 'plugin', 'agents', `${id}.md`)
+        : join(instance.kb(kbId).path, '.claude', 'agents', `${id}.md`)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, text.endsWith('\n') ? text : text + '\n')
+      if (isRouter) {
+        const manifest = join(instance.workspaceDir, 'plugin', '.claude-plugin', 'plugin.json')
+        if (!existsSync(manifest)) {
+          mkdirSync(dirname(manifest), { recursive: true })
+          writeFileSync(manifest, JSON.stringify({ name: 'crelio-workspace', version: '0.1.0', description: 'Custom agents shared by every CrelioBot team' }, null, 2) + '\n')
+        }
+      }
+    }
+    if (!isCore) {
       const add = list => [...new Set([...(list ?? []), id])]
-      if (scope === 'workspace') updateSettings(instance.workspaceDir, s => { s.agents = { ...s.agents, custom: add(s.agents?.custom) } })
+      if (isRouter) updateSettings(instance.workspaceDir, s => { s.agents = { ...s.agents, custom: add(s.agents?.custom) } })
       else updateKbProfile(instance.workspaceDir, kbId, k => { k.agents = { ...k.agents, custom: add(k.agents?.custom) } })
     }
+
     const fresh = loadInstance(instance.workspaceDir, { repoDir: instance.repoDir })
-    const kb = fresh.kb(kbId)
-    const d = kb.discord ?? {}
-    if (!d.category_id) throw new ToolError('this KB has no Discord category yet — the owner runs "crelio discord provision"')
-    const r = await provisioner({ client: manager(), guildId: instance.guildId }).agentChannelAndRole({
-      kbName: kb.name ?? kb.id, categoryId: d.category_id, agent: id, channelId: d.agents?.[id], roleId: d.roles?.[id],
-    })
-    updateKbProfile(instance.workspaceDir, kbId, k => {
-      k.discord = { ...k.discord, agents: { ...k.discord?.agents, [id]: r.channel_id }, roles: { ...k.discord?.roles, [id]: r.role_id } }
-    })
+    const p = provisioner({ client: manager(), guildId: instance.guildId })
+    const channels = {}
+    for (const kb of isRouter ? [...fresh.kbs.values()] : [fresh.kb(kbId)]) {
+      const d = kb.discord ?? {}
+      if (!d.category_id) { channels[kb.id] = 'no Discord category yet — crelio discord provision'; continue }
+      const r = await p.agentChannelAndRole({ kbName: kb.name ?? kb.id, categoryId: d.category_id, agent: id, channelId: d.agents?.[id], roleId: d.roles?.[id] })
+      updateKbProfile(instance.workspaceDir, kb.id, k => {
+        k.discord = { ...k.discord, agents: { ...k.discord?.agents, [id]: r.channel_id }, roles: { ...k.discord?.roles, [id]: r.role_id } }
+      })
+      channels[kb.id] = { channel_id: r.channel_id, role_id: r.role_id }
+    }
     const ready = !!fresh.botFor(kbId, id)?.token
+    const restart = isRouter ? 'restart_session for each KB' : 'restart_session'
     return {
       agent: id,
-      channel_id: r.channel_id,
-      role_id: r.role_id,
+      ...(isRouter ? { channels } : channels[kbId]),
       bot_ready: ready,
       next: ready
-        ? 'Call restart_session so the session loads the agent and listens to its channel.'
-        : `The agent needs its own bot application: the owner creates it in the Discord Developer Portal and runs "crelio bot add ${id}" on the PC. Then call restart_session.`,
+        ? `Call ${restart} so the sessions load the agent and listen to its channel.`
+        : `The agent needs its own bot application: the owner creates it in the Discord Developer Portal and runs "crelio bot add ${id}" on the PC. Then call ${restart}.`,
     }
   }
 
@@ -426,6 +456,7 @@ export function createTools({
       agents: agents().map(a => ({
         id: a,
         name: agentName(a),
+        subagent_type: CORE_AGENTS.includes(a) ? `creliobot:${a}` : (kb?.agents?.custom ?? []).includes(a) ? a : `crelio-workspace:${a}`,
         bot_user_id: instance.botFor(kbId, a)?.user_id ?? null,
         role_id: d.roles?.[a] ?? null,
         channel_id: a === 'manager' ? (d.general_id ?? null) : (d.agents?.[a] ?? null),

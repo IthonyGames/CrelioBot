@@ -129,9 +129,15 @@ const TOOLS = [
   },
   {
     name: 'provision_agent',
-    description: 'Agent creator step: register a Custom agent on this team (scope "kb") or on every team (scope "workspace"), and create its Agent channel and role in this KB\'s category. Write the agent\'s definition file first. Returns whether its bot is ready and what comes next.',
-    kbOnly: true,
-    inputSchema: { type: 'object', properties: { agent: { type: 'string' }, scope: { type: 'string', enum: ['kb', 'workspace'] } }, required: ['agent'] },
+    description: 'Agent creator: write a Custom agent\'s definition (markdown with frontmatter name/description/model/skills), register it and create its Agent channel and role. From a KB session: for this KB (definition saved in the KB). From the Router: for every KB (definition saved in the Workspace). Returns whether its bot is ready and what comes next (bot creation by the owner, then restart_session).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', description: 'Agent id, lowercase-with-dashes' },
+        definition: { type: 'string', description: 'Full agent definition file content (omit to only re-create the channel and role)' },
+      },
+      required: ['agent'],
+    },
   },
   {
     name: 'route',

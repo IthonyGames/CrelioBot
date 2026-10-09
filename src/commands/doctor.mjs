@@ -9,6 +9,7 @@ import { discordClient } from '../discord.mjs'
 import { buildSession } from '../runtime.mjs'
 import { findExecutable } from '../launcher.mjs'
 import { hasMessageContentIntent, inviteUrl } from '../permissions.mjs'
+import { localChanges, staleLock } from '../git.mjs'
 
 export async function runDoctor({ workspace, repoDir, clientFor = t => discordClient(t), env = process.env }) {
   const results = []
@@ -84,6 +85,12 @@ export async function runDoctor({ workspace, repoDir, clientFor = t => discordCl
   if (instance.routerEnabled) checkChannel(instance.globalGeneralId, 'Global General')
   for (const kb of instance.kbs.values()) {
     existsSync(kb.path) ? ok(`KB ${kb.id}: folder found`) : fail(`KB ${kb.id}: folder not found (${kb.path})`, `Fix "path" in workspace/kbs/${kb.id}.json`)
+    if (existsSync(join(kb.path, '.git'))) {
+      const lock = staleLock(kb.path)
+      if (lock) fail(`KB ${kb.id}: stale git lock (${lock.minutes} min old) blocks every git write`, `Make sure no git is running, then delete ${lock.path}`)
+      const changes = kb.pull_on_start ? localChanges(kb.path) : 0
+      if (changes) warn(`KB ${kb.id}: ${changes} uncommitted change(s) — "pull on start" fails if incoming commits touch them`, 'Commit or stash them (the session log says which files block the pull)')
+    }
     checkChannel(kb.discord?.general_id, `KB ${kb.id} General`)
     for (const a of instance.agentsFor(kb.id).filter(a => a !== 'manager')) {
       checkChannel(kb.discord?.agents?.[a], `KB ${kb.id} #${a}`)

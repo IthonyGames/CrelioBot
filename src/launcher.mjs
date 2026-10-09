@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { delimiter, join } from 'node:path'
 import { loadInstance } from './instance.mjs'
 import { buildSession, cleanEnv, writeSessionFiles } from './runtime.mjs'
+import { pullFastForward } from './git.mjs'
 
 const MIN_UPTIME_MS = 30_000
 
@@ -82,8 +83,8 @@ export async function runSession(workspaceDir, id, { repoDir } = {}) {
       writeSessionFiles(session)
       const kb = id === 'router' ? null : instance.kb(id)
       if (kb?.pull_on_start && existsSync(join(kb.path, '.git'))) {
-        const pull = spawnSync('git', ['-C', kb.path, 'pull', '--ff-only'], { stdio: 'inherit' })
-        if (pull.status !== 0) log('git pull failed — starting on the current state')
+        const pull = pullFastForward(kb.path)
+        log(pull.ok ? `git pull: ${pull.reason}` : `git pull skipped — ${pull.reason}. Starting on the current state.`)
       }
       const claude = instance.settings.claude_path ?? findExecutable('claude', session.env)
       if (!claude) throw new Error('Claude Code (claude) not found on PATH — install it, or set "claude_path" in crelio.json')

@@ -1,0 +1,38 @@
+{
+  "server": {
+    "guild_id": "",
+    "owner_id": ""
+  },
+  "language": "en",
+  "global_general": {
+    "channel_id": ""
+  },
+  "router": {
+    "enabled": true,
+    "permission": "guarded"
+  },
+  "hop_budget": 12,
+  "voice": {
+    "provider": "openai",
+    "api_key_env": "OPENAI_API_KEY",
+    "stt_model": "whisper-1",
+    "tts_model": "tts-1",
+    "voice": "onyx",
+    "speed": 1.4
+  },
+  "bots": {
+    "manager": { "token_env": "DISCORD_TOKEN_MANAGER", "user_id": "", "app_id": "" },
+    "kb-researcher": { "token_env": "DISCORD_TOKEN_KB_RESEARCHER", "user_id": "", "app_id": "" },
+    "web-researcher": { "token_env": "DISCORD_TOKEN_WEB_RESEARCHER", "user_id": "", "app_id": "" },
+    "brainstormer": { "token_env": "DISCORD_TOKEN_BRAINSTORMER", "user_id": "", "app_id": "" },
+    "artist": { "token_env": "DISCORD_TOKEN_ARTIST", "user_id": "", "app_id": "" },
+    "ux-expert": { "token_env": "DISCORD_TOKEN_UX_EXPERT", "user_id": "", "app_id": "" },
+    "marketing": { "token_env": "DISCORD_TOKEN_MARKETING", "user_id": "", "app_id": "" },
+    "lawyer": { "token_env": "DISCORD_TOKEN_LAWYER", "user_id": "", "app_id": "" },
+    "planner": { "token_env": "DISCORD_TOKEN_PLANNER", "user_id": "", "app_id": "" },
+    "coder": { "token_env": "DISCORD_TOKEN_CODER", "user_id": "", "app_id": "" }
+  },
+  "agents": {
+    "custom": []
+  }
+}

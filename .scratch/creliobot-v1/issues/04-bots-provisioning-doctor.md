@@ -6,6 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] Provisioning is idempotent (a second run creates nothing)
+- [ ] The Manager bot is invited with Administrator so it can create categories, channels and roles; Specialist bots get only the CrelioBot message permission set
+- [ ] Provisioning runs as the Manager bot and is idempotent (a second run creates nothing)
 - [ ] Invite link carries the CrelioBot permission set
 - [ ] Doctor reports a missing intent, a bot missing from the server, a missing channel, missing Bun / Discord plugin / Claude Code

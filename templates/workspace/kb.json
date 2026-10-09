@@ -1,0 +1,25 @@
+{
+  "name": "My KB",
+  "path": "C:/path/to/my-kb",
+  "language": "en",
+  "permission": "guarded",
+  "pull_on_start": false,
+  "tasks": {
+    "adapter": "none",
+    "notes": ""
+  },
+  "discord": {
+    "category_id": "",
+    "general_id": "",
+    "agents": {},
+    "roles": {}
+  },
+  "agents": {
+    "disabled": [],
+    "custom": []
+  },
+  "allow": {
+    "tools": []
+  },
+  "schedules": []
+}

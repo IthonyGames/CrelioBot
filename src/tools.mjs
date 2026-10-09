@@ -4,20 +4,19 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { ROUTER } from './instance.mjs'
+import { agentName, loadInstance, ROUTER, updateKbProfile, updateSettings, CORE_AGENTS } from './instance.mjs'
+import { isSessionProcess, killSessionProcess } from './launcher.mjs'
+import { provisioner } from './provision.mjs'
 import { discordClient, FLAGS, MAX_FILE_BYTES, SNOWFLAKE, THREAD_TYPES } from './discord.mjs'
 import { openRegistry, THREAD_FIELDS } from './registry.mjs'
 import { splitMessage } from './split.mjs'
+import { isOggOpus, oggVoiceInfo } from './ogg.mjs'
+import { MAX_STT_BYTES, MAX_TTS_CHARS, voiceProvider } from './voice.mjs'
 
+const AUDIO_FILE = /\.(ogg|oga|opus|mp3|wav|m4a|webm|mp4|mpga|mpeg|flac)$/i
+
+export { agentName }
 export class ToolError extends Error { name = 'ToolError' }
-
-const AGENT_NAMES = {
-  manager: 'Manager', 'kb-researcher': 'KB Researcher', 'web-researcher': 'Web Researcher', brainstormer: 'Brainstormer',
-  artist: 'Artist', 'ux-expert': 'UX Expert', marketing: 'Marketing', lawyer: 'Lawyer', planner: 'Planner', coder: 'Coder',
-}
-export function agentName(id) {
-  return AGENT_NAMES[id] ?? id.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
-}
 
 const MESSAGE_TYPES = new Set([0, 19]) // default and reply; skip system messages
 const HISTORY_BUDGET = 60_000
@@ -31,7 +30,14 @@ function snowflake(value, name) {
   return String(value)
 }
 
-export function createTools({ instance, sessionId, clientFor = token => discordClient(token), registry = openRegistry(instance.stateDir(sessionId)) }) {
+export function createTools({
+  instance,
+  sessionId,
+  clientFor = token => discordClient(token),
+  registry = openRegistry(instance.stateDir(sessionId)),
+  fetchImpl = fetch,
+  voice = () => voiceProvider(instance, { fetchImpl }),
+}) {
   const isRouter = sessionId === ROUTER
   const kbId = isRouter ? null : sessionId
   const channelCache = new Map()
@@ -260,6 +266,151 @@ export function createTools({ instance, sessionId, clientFor = token => discordC
     return out
   }
 
+  async function transcribe({ chat_id, message_id }) {
+    const t = await target(chat_id)
+    const msg = await manager().get(`/channels/${t.id}/messages/${snowflake(message_id, 'message_id')}`)
+    const isVoice = ((msg.flags ?? 0) & FLAGS.IS_VOICE_MESSAGE) !== 0
+    const att = (msg.attachments ?? []).find(a => isVoice || /^audio\//.test(a.content_type ?? '') || AUDIO_FILE.test(a.filename ?? ''))
+    if (!att) throw new ToolError('that message has no audio attachment')
+    if (att.size > MAX_STT_BYTES) throw new ToolError(`audio too large to transcribe (${(att.size / 1048576).toFixed(1)} MiB > 25 MiB)`)
+    const file = await fetchImpl(att.url)
+    if (!file.ok) throw new ToolError(`could not download the audio (HTTP ${file.status})`)
+    const audio = Buffer.from(await file.arrayBuffer())
+    const language = isRouter ? instance.language : (instance.kb(kbId).language ?? instance.language)
+    const text = await voice().transcribe(audio, { filename: att.filename, contentType: att.content_type ?? 'audio/ogg', language })
+    return { text, voice_message: isVoice, duration_secs: att.duration_secs ?? null, author: msg.author?.global_name ?? msg.author?.username }
+  }
+
+  async function speak({ agent, chat_id, text }) {
+    const t = await target(chat_id)
+    const client = botClient(need(agent, 'agent'))
+    const input = String(need(text, 'text')).trim()
+    if (input.length > MAX_TTS_CHARS) throw new ToolError(`text too long to speak (${input.length} > ${MAX_TTS_CHARS} characters) — speak a short summary and post the full text`)
+    const audio = await voice().speak(input)
+    const form = new FormData()
+    if (isOggOpus(audio)) {
+      const info = oggVoiceInfo(audio)
+      form.append('payload_json', JSON.stringify({ flags: FLAGS.IS_VOICE_MESSAGE, attachments: [{ id: 0, filename: 'voice-message.ogg', duration_secs: info.duration_secs, waveform: info.waveform }] }))
+      form.append('files[0]', new Blob([audio], { type: 'audio/ogg' }), 'voice-message.ogg')
+      const msg = await client.postForm(`/channels/${t.id}/messages`, form)
+      return { message_id: msg.id, voice_message: true, duration_secs: info.duration_secs }
+    }
+    // Provider didn't return Ogg Opus: send a plain audio attachment instead of a voice bubble.
+    form.append('payload_json', JSON.stringify({ flags: FLAGS.SUPPRESS_EMBEDS, attachments: [{ id: 0, filename: 'voice-reply.mp3' }] }))
+    form.append('files[0]', new Blob([audio], { type: 'audio/mpeg' }), 'voice-reply.mp3')
+    const msg = await client.postForm(`/channels/${t.id}/messages`, form)
+    return { message_id: msg.id, voice_message: false }
+  }
+
+  // ------------------------------------------------------------ Router
+  function routerOnly(name) {
+    if (!isRouter) throw new ToolError(`${name} is a Router tool`)
+  }
+  const link = (channelId, messageId) => `https://discord.com/channels/${instance.guildId}/${channelId}${messageId ? `/${messageId}` : ''}`
+
+  async function route({ kb, text, author_id, author_name, source_message_id }) {
+    routerOnly('route')
+    const profile = instance.kb(need(kb, 'kb'))
+    const general = profile.discord?.general_id
+    if (!general) throw new ToolError(`KB "${profile.id}" has no General channel yet — the owner runs "crelio discord provision"`)
+    const who = author_id ? `<@${snowflake(author_id, 'author_id')}>` : (author_name ?? 'someone')
+    const source = source_message_id ? ` · [original](${link(instance.globalGeneralId, snowflake(source_message_id, 'source_message_id'))})` : ''
+    const quoted = String(need(text, 'text')).split('\n').map(l => `> ${l}`).join('\n')
+    const client = clientFor(instance.requireToken(profile.id, 'manager'))
+    const ids = []
+    for (const content of splitMessage(`📨 **From the Global General** — ${who}${source}\n${quoted}`)) {
+      ids.push((await client.post(`/channels/${general}/messages`, { content, flags: FLAGS.SUPPRESS_EMBEDS, allowed_mentions: { parse: [] } })).id)
+    }
+    return { kb: profile.id, chat_id: general, message_id: ids[0], session_name: `crelio-${profile.id}`, link: link(general, ids[0]) }
+  }
+
+  async function instance_status() {
+    routerOnly('instance_status')
+    const active = (await manager().get(`/guilds/${instance.guildId}/threads/active`))?.threads ?? []
+    return {
+      kbs: [...instance.kbs.values()].map(k => {
+        const scope = new Set(instance.channelsOf(k.id))
+        const reg = openRegistry(instance.stateDir(k.id))
+        const pidFile = join(instance.stateDir(k.id), 'claude.pid')
+        const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null
+        const threads = active.filter(t => scope.has(t.parent_id)).map(t => {
+          const r = reg.get(t.id) ?? {}
+          return { name: t.name, thread_id: t.id, link: link(t.id), kind: r.kind, task_id: r.task_id, requester: r.requester, hops: r.hops, waiting_on: r.waiting_on, agent: r.agent }
+        })
+        return { id: k.id, name: k.name ?? k.id, session: `crelio-${k.id}`, running: !!pid && isSessionProcess(pid), open_threads: threads.length, threads }
+      }),
+    }
+  }
+
+  async function restart_session({ kb } = {}) {
+    if (!isRouter && kb && kb !== sessionId) throw new ToolError('a KB session can only restart itself')
+    const id = isRouter ? (kb ?? ROUTER) : sessionId
+    if (id !== ROUTER) instance.kb(id)
+    const pidFile = join(instance.stateDir(id), 'claude.pid')
+    if (!existsSync(pidFile)) throw new ToolError(`session "${id}" is not running under the CrelioBot launcher`)
+    const pid = Number(readFileSync(pidFile, 'utf8'))
+    if (!isSessionProcess(pid)) throw new ToolError(`session "${id}" is not running`)
+    // Answer first: when a session restarts itself, this very server is one of the processes ended.
+    setTimeout(() => killSessionProcess(pid), 1500)
+    return { restarting: id, note: 'The launcher starts it again within seconds; open threads come back in its context.' }
+  }
+
+  // ------------------------------------------------------------ KB administration
+  function freshKb() {
+    return loadInstance(instance.workspaceDir, { repoDir: instance.repoDir }).kb(kbId)
+  }
+
+  async function schedules({ action = 'list', id, cron, prompt }) {
+    if (isRouter) throw new ToolError('Schedules belong to KB sessions')
+    if (action === 'list') return { schedules: freshKb().schedules ?? [] }
+    const sid = String(need(id, 'id')).toLowerCase()
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(sid)) throw new ToolError('id must be lowercase letters, digits and dashes')
+    if (action === 'add') {
+      if (!/^\s*(\S+\s+){4}\S+\s*$/.test(String(need(cron, 'cron')))) throw new ToolError('cron must have 5 fields: minute hour day-of-month month day-of-week (local time)')
+      const entry = { id: sid, cron: cron.trim(), prompt: String(need(prompt, 'prompt')).trim() }
+      updateKbProfile(instance.workspaceDir, kbId, k => { k.schedules = [...(k.schedules ?? []).filter(s => s.id !== sid), entry] })
+      return { saved: entry, next: 'Arm it now with CronCreate (recurring, same cron and prompt); it is re-armed at every session start.' }
+    }
+    if (action === 'remove') {
+      let found = false
+      updateKbProfile(instance.workspaceDir, kbId, k => { found = (k.schedules ?? []).some(s => s.id === sid); k.schedules = (k.schedules ?? []).filter(s => s.id !== sid) })
+      if (!found) throw new ToolError(`no Schedule "${sid}"`)
+      return { removed: sid, next: 'Also remove the armed job with CronDelete (CronList shows it).' }
+    }
+    throw new ToolError('action must be list, add or remove')
+  }
+
+  async function provision_agent({ agent, scope = 'kb' }) {
+    if (isRouter) throw new ToolError('Agents belong to KB teams')
+    const id = String(need(agent, 'agent')).toLowerCase()
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id) || id === 'manager' || id === ROUTER) throw new ToolError('agent must be a lowercase id with letters, digits and dashes (not manager/router)')
+    if (!CORE_AGENTS.includes(id)) {
+      const add = list => [...new Set([...(list ?? []), id])]
+      if (scope === 'workspace') updateSettings(instance.workspaceDir, s => { s.agents = { ...s.agents, custom: add(s.agents?.custom) } })
+      else updateKbProfile(instance.workspaceDir, kbId, k => { k.agents = { ...k.agents, custom: add(k.agents?.custom) } })
+    }
+    const fresh = loadInstance(instance.workspaceDir, { repoDir: instance.repoDir })
+    const kb = fresh.kb(kbId)
+    const d = kb.discord ?? {}
+    if (!d.category_id) throw new ToolError('this KB has no Discord category yet — the owner runs "crelio discord provision"')
+    const r = await provisioner({ client: manager(), guildId: instance.guildId }).agentChannelAndRole({
+      kbName: kb.name ?? kb.id, categoryId: d.category_id, agent: id, channelId: d.agents?.[id], roleId: d.roles?.[id],
+    })
+    updateKbProfile(instance.workspaceDir, kbId, k => {
+      k.discord = { ...k.discord, agents: { ...k.discord?.agents, [id]: r.channel_id }, roles: { ...k.discord?.roles, [id]: r.role_id } }
+    })
+    const ready = !!fresh.botFor(kbId, id)?.token
+    return {
+      agent: id,
+      channel_id: r.channel_id,
+      role_id: r.role_id,
+      bot_ready: ready,
+      next: ready
+        ? 'Call restart_session so the session loads the agent and listens to its channel.'
+        : `The agent needs its own bot application: the owner creates it in the Discord Developer Portal and runs "crelio bot add ${id}" on the PC. Then call restart_session.`,
+    }
+  }
+
   /** Who is on this team and how to reach them — for subagents, which don't see the session context. */
   async function team() {
     const kb = isRouter ? null : instance.kb(kbId)
@@ -294,5 +445,10 @@ export function createTools({ instance, sessionId, clientFor = token => discordC
     return { recorded: line.trim() }
   }
 
-  return { post, edit, react, thread_open, thread_close, thread_list, thread_history, thread_meta, whereami, team, team_learning, _target: target, _botClient: botClient }
+  return {
+    post, edit, react, thread_open, thread_close, thread_list, thread_history, thread_meta, whereami,
+    transcribe, speak, team, team_learning, schedules, provision_agent, restart_session,
+    route, instance_status,
+    _target: target, _botClient: botClient,
+  }
 }

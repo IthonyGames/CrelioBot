@@ -2,7 +2,7 @@
 // Every other module asks it the same questions: which KBs, which Agents, which bot speaks
 // for an Agent, which KB a Discord channel belongs to. See CONTEXT.md for the vocabulary.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
 export class ConfigError extends Error {
@@ -13,6 +13,14 @@ export const ROUTER = 'router'
 export const SPECIALISTS = ['kb-researcher', 'web-researcher', 'brainstormer', 'artist', 'ux-expert', 'marketing', 'lawyer', 'planner', 'coder']
 export const CORE_AGENTS = ['manager', ...SPECIALISTS]
 export const PERMISSION_LEVELS = ['guarded', 'full']
+
+const AGENT_NAMES = {
+  manager: 'Manager', 'kb-researcher': 'KB Researcher', 'web-researcher': 'Web Researcher', brainstormer: 'Brainstormer',
+  artist: 'Artist', 'ux-expert': 'UX Expert', marketing: 'Marketing', lawyer: 'Lawyer', planner: 'Planner', coder: 'Coder',
+}
+export function agentName(id) {
+  return AGENT_NAMES[id] ?? id.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+}
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/
 
@@ -30,6 +38,40 @@ function readJson(path, what) {
   let text
   try { text = readFileSync(path, 'utf8') } catch { throw new ConfigError(`${what} not found: ${path} — run setup first`) }
   try { return JSON.parse(text) } catch (e) { throw new ConfigError(`${what} is not valid JSON (${path}): ${e.message}`) }
+}
+
+function writeJson(path, data) {
+  writeFileSync(path + '.tmp', JSON.stringify(data, null, 2) + '\n')
+  renameSync(path + '.tmp', path)
+}
+
+/** Read-modify-write a KB profile (mutate receives the parsed JSON and may change it in place). */
+export function updateKbProfile(workspaceDir, id, mutate) {
+  const path = join(resolve(workspaceDir), 'kbs', `${id}.json`)
+  const data = readJson(path, 'KB profile')
+  mutate(data)
+  writeJson(path, data)
+  return data
+}
+
+/** Read-modify-write the Instance settings (crelio.json). */
+export function updateSettings(workspaceDir, mutate) {
+  const path = join(resolve(workspaceDir), 'crelio.json')
+  const data = readJson(path, 'Instance settings')
+  mutate(data)
+  writeJson(path, data)
+  return data
+}
+
+/** Set (or replace) KEY=value lines in workspace/.env without touching the others. */
+export function setSecret(workspaceDir, name, value) {
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) throw new ConfigError(`invalid secret name ${name}`)
+  const path = join(resolve(workspaceDir), '.env')
+  const lines = existsSync(path) ? readFileSync(path, 'utf8').split(/\r?\n/) : []
+  const i = lines.findIndex(l => l.startsWith(`${name}=`))
+  if (i >= 0) lines[i] = `${name}=${value}`
+  else lines.splice(lines.at(-1) === '' ? lines.length - 1 : lines.length, 0, `${name}=${value}`)
+  writeFileSync(path, lines.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 })
 }
 
 export function loadInstance(workspaceDir, { repoDir } = {}) {

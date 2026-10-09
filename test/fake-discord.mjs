@@ -1,7 +1,8 @@
 // In-memory fake of the Discord REST API (just the routes CrelioBot uses), for process-level tests.
 import { createServer } from 'node:http'
+import { oggOpusSample } from './ogg-sample.mjs'
 
-export async function startFakeDiscord({ guildId, channels = [], bots = {} }) {
+export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsFormat = 'ogg' }) {
   let next = 500000000000000000n
   const newId = () => String(next++)
   const state = {
@@ -9,6 +10,8 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {} }) {
     messages: new Map(), // channel id → messages, oldest first
     requests: [],
     rateLimitOnce: new Set(),
+    files: new Map(), // attachment id → bytes, served at /files/:id
+    roles: [{ id: guildId, name: '@everyone' }],
   }
   const userFor = token => bots[token] ?? { id: '1', username: 'unknown-bot', bot: true }
 
@@ -37,13 +40,32 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {} }) {
       const fd = await new Response(raw, { headers: { 'content-type': type } }).formData()
       form = { payload: JSON.parse(fd.get('payload_json')), files: [...fd.entries()].filter(([k]) => k.startsWith('files[')).map(([k, f]) => ({ field: k, name: f.name, size: f.size })) }
     }
-    state.requests.push({ method: req.method, path, query: Object.fromEntries(url.searchParams), token, json, form })
+    if (!/^\/(v1|files)\//.test(url.pathname)) state.requests.push({ method: req.method, path, query: Object.fromEntries(url.searchParams), token, json, form })
 
     const reply = (status, body) => {
       res.writeHead(status, { 'Content-Type': 'application/json' })
       res.end(body === undefined ? '' : JSON.stringify(body))
     }
     const key = `${req.method} ${path}`
+    // --- fake OpenAI and CDN ------------------------------------------------
+    if (url.pathname === '/v1/audio/transcriptions') {
+      const fd = await new Response(raw, { headers: { 'content-type': type } }).formData()
+      const file = fd.get('file')
+      state.requests.push({ method: 'OPENAI', path: url.pathname, model: fd.get('model'), language: fd.get('language'), filename: file.name, size: file.size, auth: req.headers.authorization })
+      return reply(200, { text: `transcribed ${file.name} (${file.size} bytes)` })
+    }
+    if (url.pathname === '/v1/audio/speech') {
+      const body = JSON.parse(raw.toString())
+      state.requests.push({ method: 'OPENAI', path: url.pathname, body, auth: req.headers.authorization })
+      res.writeHead(200, { 'Content-Type': 'audio/ogg' })
+      return res.end(ttsFormat === 'ogg' ? oggOpusSample({ seconds: 2.5 }) : Buffer.from('ID3fake-mp3-bytes'))
+    }
+    const fileMatch = url.pathname.match(/^\/files\/(\d+)$/)
+    if (fileMatch) {
+      const f = state.files.get(fileMatch[1])
+      res.writeHead(f ? 200 : 404)
+      return res.end(f ?? '')
+    }
     if (state.rateLimitOnce.has(key)) {
       state.rateLimitOnce.delete(key)
       return reply(429, { message: 'You are being rate limited.', retry_after: 0.05, global: false })
@@ -99,6 +121,22 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {} }) {
       return reply(200, { threads: [...state.channels.values()].filter(c => [10, 11, 12].includes(c.type) && !c.thread_metadata?.archived), members: [] })
     }
     if (path.match(/^\/channels\/\d+\/messages\/\d+\/reactions\/.+\/@me$/) && req.method === 'PUT') return reply(204)
+    if ((m = path.match(/^\/guilds\/(\d+)\/channels$/))) {
+      if (req.method === 'GET') return reply(200, [...state.channels.values()].filter(c => ![10, 11, 12].includes(c.type)))
+      if (req.method === 'POST') {
+        const ch = { id: newId(), guild_id: m[1], type: json.type ?? 0, name: json.name, parent_id: json.parent_id ?? null, topic: json.topic }
+        state.channels.set(ch.id, ch)
+        return reply(201, ch)
+      }
+    }
+    if ((m = path.match(/^\/guilds\/(\d+)\/roles$/))) {
+      if (req.method === 'GET') return reply(200, state.roles)
+      if (req.method === 'POST') {
+        const role = { id: newId(), name: json.name, mentionable: json.mentionable, permissions: json.permissions }
+        state.roles.push(role)
+        return reply(200, role)
+      }
+    }
     reply(404, { message: `fake: no route ${key}`, code: 0 })
   })
   await new Promise(r => server.listen(0, '127.0.0.1', r))

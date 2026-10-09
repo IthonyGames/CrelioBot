@@ -89,6 +89,16 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { chat_id: chatProp, message_id: { type: 'string' } }, required: ['chat_id'] },
   },
   {
+    name: 'transcribe',
+    description: 'Text of a person\'s Voice note (or any audio attachment) in a message. Treat the text as if they had typed it; don\'t echo it back. A person who spoke gets a short Voice note back (speak) plus the full text.',
+    inputSchema: { type: 'object', properties: { chat_id: chatProp, message_id: { type: 'string' } }, required: ['chat_id', 'message_id'] },
+  },
+  {
+    name: 'speak',
+    description: 'Send a Voice note (a real Discord voice message) as an agent. Keep it short and spoken — a summary, not a document (≤ 4096 characters); post the full text separately. Use it when the person spoke to you or asked for a voice reply.',
+    inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, text: { type: 'string' } }, required: ['agent', 'chat_id', 'text'] },
+  },
+  {
     name: 'team',
     description: 'Your team: KB, language, Hop budget, owner, and every agent with its display name, bot user id, role id, channel and the mention to use. Call it once when you start working (subagents do not see the session context).',
     inputSchema: { type: 'object', properties: {} },
@@ -98,7 +108,58 @@ const TOOLS = [
     description: 'Record a Team learning — a lesson about how the agents work together (not about the KB\'s domain: those go into the KB with its own learning method).',
     inputSchema: { type: 'object', properties: { text: { type: 'string' }, agents: { type: 'array', items: { type: 'string' } } }, required: ['text'] },
   },
+  {
+    name: 'restart_session',
+    description: 'Restart a session through the CrelioBot launcher (it comes back within seconds with its open threads). A KB session restarts itself (e.g. to load a new agent); the Router may restart any KB session ("kb") or itself. Post what you are doing first.',
+    inputSchema: { type: 'object', properties: { kb: { type: 'string', description: 'Router only: the KB id to restart' } } },
+  },
+  {
+    name: 'schedules',
+    description: 'List, add or remove this KB\'s Schedules (recurring work). After add, arm it with CronCreate (same cron and prompt, recurring); after remove, CronDelete the armed job. cron: 5 fields, local time (e.g. "0 8 * * 1-5" = weekdays at 8:00).',
+    kbOnly: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'add', 'remove'] },
+        id: { type: 'string', description: 'Short id, e.g. "morning-brief"' },
+        cron: { type: 'string' },
+        prompt: { type: 'string', description: 'What to do when it fires, as an instruction to the Manager' },
+      },
+    },
+  },
+  {
+    name: 'provision_agent',
+    description: 'Agent creator step: register a Custom agent on this team (scope "kb") or on every team (scope "workspace"), and create its Agent channel and role in this KB\'s category. Write the agent\'s definition file first. Returns whether its bot is ready and what comes next.',
+    kbOnly: true,
+    inputSchema: { type: 'object', properties: { agent: { type: 'string' }, scope: { type: 'string', enum: ['kb', 'workspace'] } }, required: ['agent'] },
+  },
+  {
+    name: 'route',
+    description: 'Router: post a request from the Global General into a KB\'s General (as the Manager bot, quoting the author and linking the original). Returns chat_id/message_id of the posted copy and the KB session name — then SendMessage that session so it handles it.',
+    routerOnly: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kb: { type: 'string', description: 'KB id' },
+        text: { type: 'string', description: 'The request, in the author\'s words' },
+        author_id: { type: 'string' },
+        author_name: { type: 'string' },
+        source_message_id: { type: 'string', description: 'message_id of the request in the Global General' },
+      },
+      required: ['kb', 'text'],
+    },
+  },
+  {
+    name: 'instance_status',
+    description: 'Router: every KB with whether its session is running and its open threads (Task id, Requester, Hops, who is waiting on whom, link).',
+    routerOnly: true,
+    inputSchema: { type: 'object', properties: {} },
+  },
 ]
+
+const visibleTools = () => TOOLS
+  .filter(t => (SESSION === ROUTER ? !t.kbOnly : !t.routerOnly))
+  .map(({ kbOnly, routerOnly, ...t }) => t)
 
 let tools
 let startupError
@@ -129,10 +190,10 @@ async function handle(msg) {
       } })
     }
     if (method === 'ping') return send({ jsonrpc: '2.0', id, result: {} })
-    if (method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: startupError ? [] : TOOLS } })
+    if (method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: startupError ? [] : visibleTools() } })
     if (method === 'tools/call') {
-      const fn = tools?.[params?.name]
-      if (!fn || params.name.startsWith('_')) throw new Error(`unknown tool: ${params?.name}`)
+      const fn = visibleTools().some(t => t.name === params?.name) ? tools?.[params.name] : undefined
+      if (!fn) throw new Error(`unknown tool: ${params?.name}`)
       try {
         const out = await fn(params.arguments ?? {})
         return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(out) }] } })

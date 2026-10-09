@@ -37,6 +37,20 @@ test('a person\'s Voice note is transcribed in the KB language', async () => {
   assert.equal(call.auth, 'Bearer sk-test')
 })
 
+test('a near-silent Voice note is reported as silence, not as a provider failure', async () => {
+  const { a, fake, base, mcp, done } = await setup()
+  fake.state.files.set('778', Buffer.from('quiet'))
+  fake.state.emptyTranscription = true
+  const msg = fake.addMessage(a.general_id, {
+    flags: 8192,
+    author: { id: '42', username: 'anthony' },
+    attachments: [{ id: '778', filename: 'voice-message.ogg', content_type: 'audio/ogg', size: 5, duration_secs: 12, waveform: Buffer.alloc(64, 10).toString('base64'), url: `${base}/files/778` }],
+  })
+  const res = await mcp.call('transcribe', { chat_id: a.general_id, message_id: msg.id })
+  await done()
+  assert.match(res.text, /almost silent/)
+})
+
 test('a message without audio is refused', async () => {
   const { a, fake, mcp, done } = await setup()
   const msg = fake.addMessage(a.general_id, { content: 'just text', author: { id: '42' } })

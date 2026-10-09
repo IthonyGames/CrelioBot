@@ -52,7 +52,7 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsF
       const fd = await new Response(raw, { headers: { 'content-type': type } }).formData()
       const file = fd.get('file')
       state.requests.push({ method: 'OPENAI', path: url.pathname, model: fd.get('model'), language: fd.get('language'), filename: file.name, size: file.size, auth: req.headers.authorization })
-      return reply(200, { text: `transcribed ${file.name} (${file.size} bytes)` })
+      return reply(200, { text: state.emptyTranscription ? '' : `transcribed ${file.name} (${file.size} bytes)` })
     }
     if (url.pathname === '/v1/audio/speech') {
       const body = JSON.parse(raw.toString())

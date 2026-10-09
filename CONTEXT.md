@@ -151,6 +151,18 @@ _Avoid_: workflow note, meta-learning
 Recurring work a KB session starts on its own at set times, such as a morning brief.
 _Avoid_: cron, routine, job
 
+**Call**:
+A spoken conversation between people and a KB team in the KB's Discord voice channel. The Manager bot listens and answers out loud. A Call starts when someone joins the channel. It ends when someone says they are done and the last person leaves, or after a long stretch with nobody there.
+_Avoid_: voice chat, meeting
+
+**Utterance**:
+One thing a person said in a Call, from when they start talking to a pause: transcribed, logged, and handed to the KB session.
+_Avoid_: voice message (that is a Voice note)
+
+**Call service**:
+The optional process that holds the bot's voice connection for Calls. It is separate from the KB sessions and installed on demand.
+_Avoid_: voice bot, voice daemon
+
 **Voice note**:
 A Discord voice message (the playable waveform bubble), sent by a person or by an Agent bot.
 _Avoid_: audio file, mp3 reply

@@ -36,6 +36,14 @@ export async function sessionContext({ instance, sessionId, tools }) {
       ...Object.entries(team.channels ?? {}).map(([name, id]) => `- #${name}: ${id} (you serve it)`),
       `Off, can be enabled on request (agent_enable): ${team.available.length ? team.available.map(a => `\`${a}\``).join(', ') : 'none'}. This roster is from the session start — after a team change, \`team\` is the truth.`,
     )
+    const kbProfile = instance.kb(sessionId)
+    if (kbProfile.call?.enabled && kbProfile.discord?.call_id) {
+      let state = null
+      try { state = JSON.parse(readFileSync(join(instance.stateDir(sessionId), 'call', 'state.json'), 'utf8')) } catch {}
+      out.push('', `## Calls — voice channel <#${kbProfile.discord.call_id}>`,
+        'People talk to you there: their words arrive as `[Call]` messages from crelio-call; you answer out loud with call_say (see "Calls" in your instructions).',
+        state?.active ? `**A Call is in progress** (since ${state.since}): ${state.people.length ? `in it now: ${state.people.join(', ')}` : 'nobody in it right now'}${state.held ? `, ${state.held} thing(s) kept to say` : ''}${state.end_requested ? ', ending when the last person leaves' : ''}.` : 'No Call in progress.')
+    }
     const schedules = instance.kb(sessionId).schedules ?? []
     if (schedules.length) {
       out.push('', '## Schedules — arm each with CronCreate if CronList does not show it',

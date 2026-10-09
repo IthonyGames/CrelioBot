@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { ConfigError, loadInstance } from '../src/instance.mjs'
-import { runSession, startAll, stopAll, isSessionProcess } from '../src/launcher.mjs'
+import { runSession, startAll, stopAll, isSessionProcess, launchIds, pidFile } from '../src/launcher.mjs'
 
 const REPO = resolve(import.meta.dirname, '..')
 
@@ -25,6 +25,8 @@ Setup
   bot invite [<agent>]        print invite links
   kb add <path>               add a folder as a KB
   discord provision           create the Discord layout (channels, roles) from the Workspace
+  calls install | status      the Call service (voice channels) — optional dependencies
+  calls enable|disable <kb>   turn Calls on/off for a KB (creates its voice channel)
 
 Options
   --workspace <dir>           Workspace folder (default: CRELIO_WORKSPACE or ./workspace)
@@ -63,9 +65,9 @@ async function main() {
     }
     case 'status': {
       const instance = loadInstance(workspace, { repoDir: REPO })
-      for (const id of instance.sessions()) {
-        const pidFile = join(instance.stateDir(id), 'claude.pid')
-        const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null
+      for (const id of launchIds(instance)) {
+        const file = pidFile(instance, id)
+        const pid = existsSync(file) ? Number(readFileSync(file, 'utf8')) : null
         console.log(`${id.padEnd(20)} ${pid && isSessionProcess(pid) ? `running (pid ${pid})` : 'stopped'}`)
       }
       return
@@ -74,6 +76,7 @@ async function main() {
     case 'doctor':
     case 'bot':
     case 'kb':
+    case 'calls':
     case 'discord': {
       const mod = await import(`../src/commands/${cmd}.mjs`)
       return mod.default({ workspace, repoDir: REPO, sub, rest, opts })

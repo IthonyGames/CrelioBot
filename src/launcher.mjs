@@ -7,7 +7,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
-import { loadInstance } from './instance.mjs'
+import { CALLS, loadInstance } from './instance.mjs'
 import { buildSession, cleanEnv, writeSessionFiles } from './runtime.mjs'
 import { pullFastForward } from './git.mjs'
 
@@ -49,6 +49,20 @@ export function findExecutable(name, env = process.env) {
 
 function stopFlag(instance) { return join(instance.workspaceDir, 'state', 'STOP') }
 
+/** The Call service runs when its optional dependencies are installed (crelio calls install, ADR-0007). */
+export function callsInstalled(repoDir) {
+  return existsSync(join(repoDir, 'calls', 'node_modules', '@discordjs', 'voice'))
+}
+
+/** Windows the launcher keeps running: the sessions, plus the Call service when installed. */
+export function launchIds(instance) {
+  return [...instance.sessions(), ...(callsInstalled(instance.repoDir) ? [CALLS] : [])]
+}
+
+export function pidFile(instance, id) {
+  return join(instance.stateDir(id), id === CALLS ? 'service.pid' : 'claude.pid')
+}
+
 /** Runs an interactive claude in this console (stdio inherited). */
 export function spawnClaude(claudePath, { args, cwd, env }) {
   const opts = { cwd, env, stdio: 'inherit' }
@@ -77,6 +91,19 @@ export async function runSession(workspaceDir, id, { repoDir } = {}) {
     sleep: ms => new Promise(r => setTimeout(r, ms)),
     log,
     start: async () => {
+      if (id === CALLS) {
+        log('starting the Call service')
+        const child = spawn(process.execPath, [join(first.repoDir, 'calls', 'service.mjs')], {
+          cwd: join(first.repoDir, 'calls'),
+          env: { ...cleanEnv(process.env), CRELIO_WORKSPACE: first.workspaceDir, CRELIO_HOME: first.repoDir },
+          stdio: 'inherit',
+        })
+        writeFileSync(pidFile(first, id), String(child.pid))
+        return new Promise(resolve => {
+          child.on('exit', code => resolve(code))
+          child.on('error', err => { log(`could not start the Call service: ${err.message}`); resolve(-1) })
+        })
+      }
       // Re-read the Workspace each time so profile edits apply on the next restart.
       const instance = loadInstance(workspaceDir, { repoDir })
       const session = buildSession(instance, id)
@@ -104,8 +131,8 @@ export async function runSession(workspaceDir, id, { repoDir } = {}) {
 export function startAll(workspaceDir, { repoDir, only } = {}) {
   const instance = loadInstance(workspaceDir, { repoDir })
   rmSync(stopFlag(instance), { force: true })
-  const ids = only?.length ? only : instance.sessions()
-  for (const id of ids) buildSession(instance, id) // fail fast on configuration errors, before opening anything
+  const ids = only?.length ? only : launchIds(instance)
+  for (const id of ids) if (id !== CALLS) buildSession(instance, id) // fail fast on configuration errors, before opening anything
   const node = process.execPath
   const cli = join(instance.repoDir, 'bin', 'crelio.mjs')
   const env = { ...cleanEnv(process.env), CRELIO_WORKSPACE: instance.workspaceDir }
@@ -114,7 +141,7 @@ export function startAll(workspaceDir, { repoDir, only } = {}) {
   if (process.platform === 'win32') {
     const wt = findExecutable('wt', env)
     for (const id of ids) {
-      const title = `CrelioBot - ${id === 'router' ? 'Router' : (instance.kb(id).name ?? id)}`
+      const title = `CrelioBot - ${id === 'router' ? 'Router' : id === CALLS ? 'Calls' : (instance.kb(id).name ?? id)}`
       const dir = instance.stateDir(id)
       mkdirSync(dir, { recursive: true })
       const windowCmd = join(dir, 'window.cmd')
@@ -173,11 +200,11 @@ export function stopAll(workspaceDir, { repoDir } = {}) {
   mkdirSync(join(instance.workspaceDir, 'state'), { recursive: true })
   writeFileSync(stopFlag(instance), new Date().toISOString())
   const stopped = []
-  for (const id of instance.sessions()) {
-    const pidFile = join(instance.stateDir(id), 'claude.pid')
-    if (!existsSync(pidFile)) continue
-    try { if (killSessionProcess(Number(readFileSync(pidFile, 'utf8')))) stopped.push(id) } catch {}
-    rmSync(pidFile, { force: true })
+  for (const id of [...instance.sessions(), CALLS]) {
+    const file = pidFile(instance, id)
+    if (!existsSync(file)) continue
+    try { if (killSessionProcess(Number(readFileSync(file, 'utf8')))) stopped.push(id) } catch {}
+    rmSync(file, { force: true })
   }
   return stopped
 }

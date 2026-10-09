@@ -27,10 +27,11 @@ export function voiceProvider(instance, { fetchImpl = fetch, api = process.env.C
     return res
   }
   return {
-    async transcribe(audio, { filename = 'voice-message.ogg', contentType = 'audio/ogg', language } = {}) {
+    async transcribe(audio, { filename = 'voice-message.ogg', contentType = 'audio/ogg', language, prompt } = {}) {
       const form = new FormData()
       form.append('model', cfg.stt_model)
       if (language) form.append('language', language)
+      if (prompt) form.append('prompt', prompt) // names the model should spell right (KBs, agents)
       form.append('file', new Blob([audio], { type: contentType }), filename)
       const data = await (await call('/audio/transcriptions', { method: 'POST', body: form })).json()
       const text = String(data.text ?? '').trim()

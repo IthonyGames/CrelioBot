@@ -74,6 +74,8 @@ If a folder isn't structured as a knowledge base yet and the user has a KB-build
 
 Voice notes in and out use OpenAI (transcription + speech). The user adds `OPENAI_API_KEY=` to `workspace/.env`. Without it everything else works.
 
+**Calls** (talking with a team in a voice channel) are optional and need extra libraries: Discord only accepts end-to-end encrypted voice. If the user wants them, run `node bin/crelio.mjs calls install`. After the first start, they ask a Manager in Discord to "turn on Calls", and it creates the KB's voice channel. Details: `docs/calls.md`.
+
 ## 8. Schedules (optional)
 
 Offer a morning brief per KB (open threads, blocked tasks, what waits on them). If wanted, add to the KB profile: `"schedules": [{ "id": "morning-brief", "cron": "0 8 * * 1-5", "prompt": "Post the morning brief in the KB General: open Task threads, what is blocked, what waits on whom." }]`.

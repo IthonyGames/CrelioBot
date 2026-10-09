@@ -9,6 +9,7 @@ import { isSessionProcess, killSessionProcess } from './launcher.mjs'
 import { channelName, provisioner } from './provision.mjs'
 import { writeAccess } from './runtime.mjs'
 import { PORTAL_STEPS, registerBot, tokenEnvFor } from './bots.mjs'
+import { callService, serviceFile } from './calls.mjs'
 import { discordClient, FLAGS, MAX_FILE_BYTES, SNOWFLAKE, THREAD_TYPES } from './discord.mjs'
 import { openRegistry, THREAD_FIELDS } from './registry.mjs'
 import { splitMessage } from './split.mjs'
@@ -305,7 +306,8 @@ export function createTools({
     const quiet = wave?.length ? wave.reduce((s, x) => s + x, 0) / wave.length < 35 : false
     let text
     try {
-      text = await voice().transcribe(audio, { filename: att.filename, contentType: att.content_type ?? 'audio/ogg', language })
+      const names = [...instance.kbs.values()].map(k => k.name ?? k.id).concat('CrelioBot', ...agents().map(agentName))
+      text = await voice().transcribe(audio, { filename: att.filename, contentType: att.content_type ?? 'audio/ogg', language, prompt: [...new Set(names)].join(', ') })
     } catch (e) {
       if (quiet && /empty/.test(e.message)) throw new ToolError('the recording is almost silent — no speech detected; ask the person to record again (microphone muted or too far?)')
       throw e
@@ -526,11 +528,24 @@ export function createTools({
       throw new ToolError(`${action} needs the owner's approval: pass approval_chat_id and approval_message_id — the owner's message asking for it or agreeing to it`)
     }
     if (!instance.owners.length) throw new ToolError('no owner is recorded for this Instance (crelio.json → server.owner_id) — the owner sets it with "crelio discord use"')
+    if (approval_chat_id === 'call') return approvedInCall(approval_message_id)
     const t = await target(approval_chat_id)
     const msg = await manager().get(`/channels/${t.id}/messages/${snowflake(approval_message_id, 'approval_message_id')}`)
     if (!instance.owners.includes(msg.author?.id)) throw new ToolError(`message ${msg.id} is not from the owner — only the owner${instance.settings.admins?.length ? ' or an admin' : ''} can approve team changes; ask them`)
     if (Date.now() - Date.parse(msg.timestamp) > APPROVAL_MAX_AGE_MS) throw new ToolError('that approval is more than a day old — ask the owner again')
     return msg.author.id
+  }
+
+  /** In a Call, the owner approves out loud: approval_message_id is the utterance id from the call event. */
+  function approvedInCall(utteranceId) {
+    if (isRouter) throw new ToolError('approvals from a Call exist only in a KB session')
+    const file = join(instance.stateDir(kbId), 'call', 'utterances.jsonl')
+    const lines = existsSync(file) ? readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean) : []
+    const u = lines.map(l => { try { return JSON.parse(l) } catch { return null } }).find(x => x?.id === utteranceId)
+    if (!u) throw new ToolError(`no utterance "${utteranceId}" in this KB's Calls — pass the utterance id from the call event`)
+    if (!instance.owners.includes(u.user_id)) throw new ToolError(`utterance ${utteranceId} was said by ${u.name}, not the owner — only the owner can approve team changes`)
+    if (Date.now() - Date.parse(u.ts) > APPROVAL_MAX_AGE_MS) throw new ToolError('that approval is more than a day old — ask the owner again')
+    return u.user_id
   }
 
   /** The KB an administration tool acts on: a KB session's own team; the Router names it. */
@@ -708,6 +723,64 @@ export function createTools({
     }
   }
 
+  // ------------------------------------------------------------ Calls (the KB's voice channel)
+  const callTool = name => { if (isRouter) throw new ToolError(`${name} is for KB sessions — Calls happen in a KB's voice channel`) }
+  const viaService = (...args) => callService(instance, ...args).catch(e => { throw e.name === 'CallError' ? new ToolError(e.message) : e })
+
+  async function call_say({ text }) {
+    callTool('call_say')
+    return viaService('POST', '/say', { kb: kbId, text: String(need(text, 'text')) })
+  }
+
+  async function call_end({ now } = {}) {
+    callTool('call_end')
+    return viaService('POST', '/end', { kb: kbId, now: !!now })
+  }
+
+  async function call_status() {
+    callTool('call_status')
+    return viaService('GET', `/status?kb=${encodeURIComponent(kbId)}`)
+  }
+
+  function callServiceRunning() {
+    try { return isSessionProcess(JSON.parse(readFileSync(serviceFile(instance), 'utf8')).pid) } catch { return false }
+  }
+
+  /** Turns Calls on for a team: a voice channel in its category the bot joins when someone does. */
+  async function call_setup({ enabled = true, kb, remove_channel = false, approval_chat_id, approval_message_id }) {
+    const k = adminKb(kb)
+    const inst = fresh()
+    const profile = inst.kb(k)
+    const d = profile.discord ?? {}
+    if (!d.category_id) throw new ToolError('this KB has no Discord category yet — the owner runs "crelio discord provision"')
+    const by = await approved({ approval_chat_id, approval_message_id }, 'call_setup')
+    if (enabled) {
+      const name = (profile.language ?? inst.language) === 'fr' ? 'Appel' : 'Call'
+      const ch = await provisioner({ client: kbManager(k), guildId: instance.guildId }).ensureChannel({ id: d.call_id, name, type: 2, parent_id: d.category_id })
+      updateKbProfile(instance.workspaceDir, k, x => {
+        x.discord = { ...x.discord, call_id: ch.id }
+        x.call = { ...x.call, enabled: true }
+      })
+      writeAccess(fresh(), k)
+      const installed = existsSync(join(instance.repoDir, 'calls', 'node_modules', '@discordjs', 'voice'))
+      const hasKey = !!inst.secret(inst.settings.voice?.api_key_env ?? 'OPENAI_API_KEY')
+      return {
+        kb: k, calls: 'on', channel_id: ch.id, name, approved_by: by,
+        next: !hasKey ? 'Calls need an OpenAI key for speech: OPENAI_API_KEY in workspace/.env on the PC.'
+          : !installed ? 'One step left for the owner, on the PC: "node bin/crelio.mjs calls install" in the CrelioBot folder, then restart CrelioBot (stop-crelio.bat, start-crelio.bat).'
+          : callServiceRunning() ? `Ready: join <#${ch.id}> and talk — the bot joins within seconds.`
+          : 'The Call service is installed but not running: restart CrelioBot (stop-crelio.bat, start-crelio.bat) so its window opens.',
+      }
+    }
+    updateKbProfile(instance.workspaceDir, k, x => {
+      x.call = { ...x.call, enabled: false }
+      if (remove_channel && x.discord) delete x.discord.call_id
+    })
+    if (remove_channel && d.call_id) await kbManager(k).delete(`/channels/${d.call_id}`).catch(e => { if (e.status !== 404) throw e })
+    writeAccess(fresh(), k)
+    return { kb: k, calls: 'off', removed_channel: remove_channel ? (d.call_id ?? null) : null, approved_by: by }
+  }
+
   /**
    * How to dispatch an agent. Claude Code loads agent definitions when the session starts; afterwards it
    * only picks up new files in a KB's .claude/agents/ when that folder already existed. An agent created
@@ -762,6 +835,7 @@ export function createTools({
     post, edit, react, thread_open, thread_close, thread_list, thread_history, thread_meta, whereami,
     transcribe, speak, team, team_learning, schedules, provision_agent, restart_session,
     agent_enable, agent_disable, discord_admin, bot_register,
+    call_say, call_end, call_status, call_setup,
     route, instance_status,
     _target: target, _botClient: botClient,
   }

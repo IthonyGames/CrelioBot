@@ -1,0 +1,13 @@
+{
+  "name": "creliobot-calls",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CrelioBot Call service — optional: lets a KB team join its Discord voice channel (listen and speak). Installed with: crelio calls install",
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "dependencies": {
+    "@discordjs/voice": "0.19.2",
+    "@snazzah/davey": "0.1.12",
+    "discord.js": "14.27.0"
+  }
+}

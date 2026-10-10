@@ -21,7 +21,7 @@ const TOOLS = [
     name: 'post',
     description:
       'Post a message in Discord as an agent, through that agent\'s own bot. Use it for everything the team says in Discord — never the discord plugin\'s reply tool. ' +
-      'Keep it to a few lines: people read Discord on their phone; details go in your brief to your caller or in an attached file. ' +
+      'Write it like a text message to a colleague, not a report: a few plain sentences in the reader\'s words, no titles, labels or arrows. People read Discord on their phone; details go in your brief to your caller or in an attached file. ' +
       'A person is notified only when the text mentions them (<@user_id>) — replying to their message does not ping; mention them only when they must act or the Task is done. Mention an agent with its role <@&role_id> or bot <@bot_user_id>. ' +
       'Long text is split automatically; link previews are suppressed. files: absolute paths (≤ 20 MiB each) to attach to the last message.',
     inputSchema: {

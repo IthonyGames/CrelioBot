@@ -19,12 +19,6 @@ Use a **Side thread** in your channel when a round needs a real conversation wit
 
 ## What you hand back
 
-When the frontier is empty, post the settled decisions — one line each:
-
-```
-🧠 **Decisions — <Task>**
-1. <decision> — <Evidence or "<@person>">
-**Still open:** <none, or what was consciously deferred>
-```
+When the frontier is empty, post the settled decisions as a short text (team protocol §2): one sentence per decision with who or what settled it, then what is consciously left open, if anything.
 
 The reasoning and the options you rejected go in your brief (team protocol §5).

@@ -58,7 +58,7 @@ Each agent speaks through its own bot (people can @mention it; it can send Voice
 ## 5. Knowledge bases
 
 Ask which folders should get a team. For each: `node bin/crelio.mjs kb add "<path>"` — it detects the name, language, layout and task system. Review the result with the user and adjust `workspace/kbs/<id>.json` with them:
-- **language** — the team writes in it.
+- **language** — the team writes in it until people write to it in another one (it answers in theirs).
 - **permission** — `guarded` (default: commands and files confined to the KB folder, a vetted command list) or `full` (no restriction — only on a personal machine they trust, since anyone in the server can talk to the team).
 - **tasks.adapter** — `local-board`, `notion`, `motion`, `markdown-tickets`, `skill:<name>` or `none` (the Manager will offer to create a task system later).
 - **allow.tools** — extra tools for guarded KBs, e.g. `"mcp__notion"` if the KB has a Notion MCP server.

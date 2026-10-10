@@ -24,7 +24,7 @@ CrelioBot turns a Discord server into the workspace of Claude Code agent teams, 
 - Never log, print or post tokens; never read `workspace/.env` outside `src/instance.mjs`.
 - Test at the seams (see `docs/architecture.md#tests`): runtime fixtures, MCP server and hooks as processes against `test/fake-discord.mjs`. Run `npm test` before committing.
 - Windows first, macOS/Linux supported: paths through `node:path`, `.bat` files CRLF.
-- Agent prompts are English; agents write Discord messages in the KB's language.
+- Agent prompts are English; agents write Discord messages in the language people use with them (the KB's language by default), like text messages — no report templates (team protocol §2).
 
 ## Agent skills
 

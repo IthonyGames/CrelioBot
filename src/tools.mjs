@@ -139,7 +139,7 @@ export function createTools({
     return {
       chat_id: t.id,
       message_ids: ids,
-      ...(length > LONG_POST ? { note: `${length} characters — too long for a chat post. Keep posts to a few lines; details go in your brief to the agent that called you, or in an attached file.` } : {}),
+      ...(length > LONG_POST ? { note: `${length} characters — too long for a chat post. Write it like a text: a few plain sentences with what the person needs; details go in your brief to the agent that called you, or in an attached file.` } : {}),
     }
   }
 

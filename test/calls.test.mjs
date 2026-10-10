@@ -117,18 +117,24 @@ test('the session speaks: plain spoken text, chunked, played in the call and sho
   assert.equal(speakable('```js\ncode\n``` ok'), 'ok')
 })
 
-test('when everyone leaves, the bot stays and work goes on; what the session says waits; on return it gives an update', async () => {
+test('when everyone leaves, the bot stays and work goes on; what the session says waits, and is said the moment someone is back', async () => {
   const w = world()
   await w.join('alpha')
   await w.leave('alpha')
   assert.equal(w.adapter.leaves, 0, 'the bot stays in the channel')
-  assert.match(w.last(), /nobody is in the call now\. I stay in the channel\. Keep working/)
+  assert.match(w.last(), /nobody is in the call now\. I stay in the channel\. Keep working: what you call_say now is kept, and said as soon as someone is back here/)
   const held = await w.calls.say('alpha', 'Le tableau est prêt.')
   assert.equal(held.spoken, false)
   assert.equal(w.adapter.plays.length, 0)
   await w.join('alpha')
-  assert.match(w.last(), /Anthony is back in the call \(away 1 min\)\. While nobody was there you wanted to say: « Le tableau est prêt\. » Give them a short spoken update/)
+  await sleep(20)
+  assert.deepEqual(w.adapter.plays, ['audio:Le tableau est prêt.'], 'said at once, without waiting for the session')
+  assert.match(w.last(), /Anthony is back in the call \(away 1 min\)\. I said right away what you kept for them: « Le tableau est prêt\. » Add only what changed since/)
   assert.deepEqual(w.adapter.joins, [CALL.alpha], 'no rejoin needed')
+
+  await w.leave('alpha')
+  await w.join('alpha')
+  assert.match(w.last(), /is back in the call \(away 1 min\)\. Give them a short spoken update/, 'nothing kept: the session gives the update')
 })
 
 test('call_end: the bot leaves when the last person leaves — or at once with now', async () => {
@@ -204,7 +210,7 @@ test('words waiting for the end of a sentence still go out when the next sound i
   assert.match(w.last(), /« Lance les trois tickets »/)
 })
 
-test('moving to another KB\'s call: the bot follows, each Call keeps its own KB, and the first gives its update on return', async () => {
+test('switching to another KB\'s call routes the bot there: both sessions know, each Call keeps its own KB, and the first speaks on return', async () => {
   const w = world()
   const move = (from, to) => w.calls.voiceState({ guildId: GUILD, userId: ANTHONY, name: 'Anthony', bot: false, before: CALL[from], after: CALL[to] })
   await w.join('alpha')
@@ -216,8 +222,8 @@ test('moving to another KB\'s call: the bot follows, each Call keeps its own KB,
   w.adapter.gate = null
   assert.equal(w.adapter.channel, CALL.beta, 'the bot followed')
   const alphaTold = w.delivered.filter(d => d.kb === 'alpha').at(-1).text
-  assert.match(alphaTold, /Anthony went to the BETA call — the bot follows them there.*This Call stays open\. You were cut off mid-reply; the rest is kept\. Keep working/)
-  assert.ok(w.delivered.some(d => d.kb === 'beta' && /Anthony joined the voice channel/.test(d.text)), 'a Call starts in beta')
+  assert.match(alphaTold, /Anthony switched to the BETA call, and the bot went with them \(one bot serves every call\)\. This Call stays open, off the air until someone is back\. You were cut off mid-reply; the rest is kept\. Keep working/)
+  assert.ok(w.delivered.some(d => d.kb === 'beta' && /Anthony joined the voice channel <#\d+> from the ALPHA call — the bot came with them — a Call has started/.test(d.text)), 'a Call starts in beta')
 
   w.speak('beta', 'Parlons de Spark')
   await sleep(60)
@@ -225,10 +231,13 @@ test('moving to another KB\'s call: the bot follows, each Call keeps its own KB,
   const held = await w.calls.say('alpha', 'Les tickets sont faits.')
   assert.equal(held.spoken, false, 'alpha has nobody to talk to: kept')
 
+  const before = w.adapter.plays.length
   await move('beta', 'alpha')
+  await sleep(20)
   assert.equal(w.adapter.channel, CALL.alpha)
-  assert.match(w.delivered.filter(d => d.kb === 'beta').at(-1).text, /went to the ALPHA call/)
-  assert.match(w.delivered.filter(d => d.kb === 'alpha').at(-1).text, /Anthony is back in the call.*« Je lance les tickets\. Ensuite je fais la revue\. » « Les tickets sont faits\. »/)
+  assert.match(w.delivered.filter(d => d.kb === 'beta').at(-1).text, /switched to the ALPHA call/)
+  assert.match(w.delivered.filter(d => d.kb === 'alpha').at(-1).text, /Anthony is back in the call \(away 1 min\) from the BETA call — the bot came with them\. I said right away what you kept for them: « Je lance les tickets\. Ensuite je fais la revue\. » « Les tickets sont faits\. »/)
+  assert.match(w.adapter.plays.slice(before).join(' '), /Je lance les tickets\. Ensuite je fais la revue\. Les tickets sont faits\./, 'alpha speaks as soon as the bot is back')
 })
 
 test('speech detection: a voice is speech; silence, noise and a too-quiet voice are not; padding and long pauses', () => {

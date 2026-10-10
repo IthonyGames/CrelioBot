@@ -154,8 +154,11 @@ export function createCalls({
 
   const people = c => [...c.humans.values()].join(', ') || 'nobody'
   const minutes = ms => Math.max(1, Math.round(ms / 60000))
+  const kbName = kbId => instance.kb(kbId).name ?? kbId
+  const quoted = lines => lines.map(h => `« ${h} »`).join(' ')
 
-  async function humanJoined(kbId, guildId, userId, name) {
+  /** `from`: the KB whose call they just left for this one — one bot serves every call, it came with them. */
+  async function humanJoined(kbId, guildId, userId, name, { from = null } = {}) {
     const c = call(kbId)
     const wasEmpty = c.humans.size === 0
     c.humans.set(userId, name)
@@ -167,22 +170,30 @@ export function createCalls({
       if (other?.humans.size) {
         c.waiting = true
         persist(c)
-        await chat(c, `📞 I'm in the ${instance.kb(otherKb).name ?? otherKb} call right now — I'll come here as soon as it frees up.`)
+        await chat(c, `📞 I'm in the ${kbName(otherKb)} call right now — I'll come here as soon as it frees up.`)
         return
       }
       await adapter.join(guildId, c.channelId)
       c.waiting = false
     }
+    const came = from ? ` from the ${kbName(from)} call — the bot came with them` : ''
     if (!c.active) {
       Object.assign(c, { active: true, endRequested: false, held: [], since: new Date(now()).toISOString(), leftAt: null })
       persist(c)
-      await tell(c, `📞 [Call] ${name} joined the voice channel <#${c.channelId}> — a Call has started. Greet them in one short sentence with call_say, then listen.`)
+      await tell(c, `📞 [Call] ${name} joined the voice channel <#${c.channelId}>${came} — a Call has started. Greet them in one short sentence with call_say, then listen.`)
     } else if (wasEmpty) {
       const held = c.held.splice(0)
       const away = c.leftAt ? ` (away ${minutes(now() - c.leftAt)} min)` : ''
       c.leftAt = null
       persist(c)
-      await tell(c, `📞 [Call] ${name} is back in the call${away}.${held.length ? ` While nobody was there you wanted to say: ${held.map(h => `« ${h} »`).join(' ')}` : ''} Give them a short spoken update of where the work stands (call_say).`)
+      if (!held.length) {
+        await tell(c, `📞 [Call] ${name} is back in the call${away}${came}. Give them a short spoken update of where the work stands (call_say).`)
+      } else {
+        // What the session kept for them is said at once — not after the session's current turn ends.
+        await chat(c, `🔊 ${held.join(' ')}`)
+        play(c, guildId, held.join(' '))
+        await tell(c, `📞 [Call] ${name} is back in the call${away}${came}. I said right away what you kept for them: ${quoted(held)} Add only what changed since (call_say), or listen.`)
+      }
     } else {
       persist(c)
       await tell(c, `📞 [Call] ${name} joined the call (now: ${people(c)}).`)
@@ -206,9 +217,9 @@ export function createCalls({
       c.lastActivity = now()
       persist(c)
       const where = to
-        ? `went to the ${instance.kb(to).name ?? to} call — the bot follows them there (one bot, one voice channel per server). This Call stays open`
+        ? `switched to the ${kbName(to)} call, and the bot went with them (one bot serves every call). This Call stays open, off the air until someone is back`
         : 'left — nobody is in the call now. I stay in the channel'
-      await tell(c, `📞 [Call] ${name} ${where}.${cut ? ' You were cut off mid-reply; the rest is kept.' : ''} Keep working: what you call_say now is kept and you'll give them an update when they come back.`)
+      await tell(c, `📞 [Call] ${name} ${where}.${cut ? ' You were cut off mid-reply; the rest is kept.' : ''} Keep working: what you call_say now is kept, and said as soon as someone is back here.`)
     }
     await serveWaiting(guildId)
   }
@@ -246,7 +257,7 @@ export function createCalls({
     const unsaid = c.held.splice(0)
     Object.assign(c, { active: false, endRequested: false, leftAt: null, since: null })
     persist(c)
-    await tell(c, `${text}${unsaid.length ? ` Not said (nobody was there): ${unsaid.map(h => `« ${h} »`).join(' ')} — post what matters in the Task thread.` : ''}`)
+    await tell(c, `${text}${unsaid.length ? ` Not said (nobody was there): ${quoted(unsaid)} — post what matters in the Task thread.` : ''}`)
   }
 
   function dropSpeech(kbId, userId) {
@@ -339,6 +350,7 @@ export function createCalls({
     const run = async () => {
       if (c.epoch !== epoch) return
       c.speaking = true
+      const started = now()
       let next = voice(c.kb).speak(chunks[0])
       for (; item.i < chunks.length && c.epoch === epoch; item.i++) {
         let audio
@@ -348,6 +360,8 @@ export function createCalls({
         if (c.epoch !== epoch) break
         await adapter.play(guildId, audio)
       }
+      const secs = ((now() - started) / 1000).toFixed(1)
+      log(`[${c.kb}] said ${item.i} of ${chunks.length} part(s) in ${secs} s${c.epoch === epoch ? '' : ' — cut off'}`)
       if (c.epoch === epoch) {
         c.speaking = false
         c.outbox.splice(c.outbox.indexOf(item), 1)
@@ -407,7 +421,7 @@ export function createCalls({
     const left = before ? kbOfChannel(before) : null
     const joined = after ? kbOfChannel(after) : null
     if (left) await humanLeft(left, guildId, userId, name, { to: joined })
-    if (joined) await humanJoined(joined, guildId, userId, name)
+    if (joined) await humanJoined(joined, guildId, userId, name, { from: left })
   }
 
   /** The bot was disconnected (kicked, network): rejoin if people are there, otherwise the Call ends. */

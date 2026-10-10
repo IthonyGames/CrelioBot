@@ -9,7 +9,7 @@
 // next to the connections the sessions' Discord plugins hold. It follows the Workspace: turning Calls on
 // or off for a KB (call_setup) applies within seconds.
 
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { Client, Events, GatewayIntentBits } from 'discord.js'
@@ -28,6 +28,17 @@ const log = msg => {
   const line = `[${new Date().toISOString()}] ${msg}`
   console.log(line)
   try { appendFileSync(logFile, line + '\n') } catch {}
+}
+
+// The voice connection's own story (gateway, UDP, end-to-end encryption) for when the bot can't be heard.
+// Heartbeats are left out; the file is rotated at 5 MB.
+const debugFile = join(dirname(logFile), 'voice-debug.log')
+const debug = msg => {
+  if (/"op":\s*(3|6)\b/.test(msg)) return
+  try {
+    if (statSync(debugFile, { throwIfNoEntry: false })?.size > 5_000_000) renameSync(debugFile, `${debugFile}.old`)
+    appendFileSync(debugFile, `[${new Date().toISOString()}] ${msg.slice(0, 600)}\n`)
+  } catch {}
 }
 
 const bots = new Map() // token env name → { client, calls, kbs }
@@ -89,7 +100,7 @@ function wantedBots() {
 
 function startBot(tokenEnv, kbs) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] })
-  const players = new Map() // guild id → AudioPlayer
+  const players = new Map() // guild id → { conn, player }: a fresh player for every new voice connection
   const wired = new WeakSet()
   const entry = { client, kbs, calls: null }
   const memberName = (guildId, userId) => {
@@ -101,6 +112,10 @@ function startBot(tokenEnv, kbs) {
   function wire(conn, guildId) {
     if (wired.has(conn)) return
     wired.add(conn)
+    conn.on('debug', m => debug(`[connection] ${m}`))
+    conn.on('stateChange', (before, after) => {
+      if (before.status !== after.status) log(`voice connection: ${before.status} → ${after.status}`)
+    })
     conn.on(voice.VoiceConnectionStatus.Disconnected, async () => {
       try {
         await Promise.race([
@@ -149,6 +164,19 @@ function startBot(tokenEnv, kbs) {
     })
   }
 
+  /** The player of this voice connection — never one left over from an earlier connection. */
+  function playerFor(guildId, conn) {
+    const current = players.get(guildId)
+    if (current?.conn === conn) return current.player
+    current?.player.stop(true)
+    const player = voice.createAudioPlayer({ behaviors: { noSubscriber: voice.NoSubscriberBehavior.Pause }, debug: true })
+    player.on('error', e => log(`player error: ${e.message}`))
+    player.on('debug', m => debug(`[player] ${m}`))
+    conn.subscribe(player)
+    players.set(guildId, { conn, player })
+    return player
+  }
+
   const adapter = {
     connectedChannel(guildId) {
       const conn = voice.getVoiceConnection(guildId)
@@ -156,28 +184,33 @@ function startBot(tokenEnv, kbs) {
     },
     async join(guildId, channelId) {
       const guild = await client.guilds.fetch(guildId)
-      const conn = voice.joinVoiceChannel({ channelId, guildId, adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: false })
+      const conn = voice.joinVoiceChannel({ channelId, guildId, adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: false, debug: true })
       await voice.entersState(conn, voice.VoiceConnectionStatus.Ready, 20_000)
       wire(conn, guildId)
       log(`joined voice channel ${channelId}`)
     },
     async leave(guildId) {
+      players.get(guildId)?.player.stop(true)
+      players.delete(guildId)
       voice.getVoiceConnection(guildId)?.destroy()
       log(`left the voice channel in ${guildId}`)
     },
+    /** Resolves when the audio has played, was stopped, or could not play for 5 s (logged, never blocks the queue). */
     play(guildId, ogg) {
       const conn = voice.getVoiceConnection(guildId)
-      if (!conn) return Promise.resolve()
-      let player = players.get(guildId)
-      if (!player) {
-        player = voice.createAudioPlayer({ behaviors: { noSubscriber: voice.NoSubscriberBehavior.Pause } })
-        player.on('error', e => log(`player error: ${e.message}`))
-        players.set(guildId, player)
-      }
-      conn.subscribe(player)
+      if (!conn || conn.state.status === voice.VoiceConnectionStatus.Destroyed) return Promise.resolve()
+      const player = playerFor(guildId, conn)
       return new Promise(done => {
+        let stuckSince = Date.now()
+        const watch = setInterval(() => {
+          if (player.state.status === voice.AudioPlayerStatus.Playing) { stuckSince = Date.now(); return }
+          if (Date.now() - stuckSince < 5_000) return
+          log(`could not play (player ${player.state.status}, connection ${conn.state.status}) — skipped`)
+          player.stop(true)
+        }, 1_000)
         const onState = (_, next) => {
           if (next.status !== voice.AudioPlayerStatus.Idle) return
+          clearInterval(watch)
           player.off('stateChange', onState)
           done()
         }
@@ -185,7 +218,7 @@ function startBot(tokenEnv, kbs) {
         player.play(voice.createAudioResource(Readable.from([ogg]), { inputType: voice.StreamType.OggOpus }))
       })
     },
-    stop(guildId) { players.get(guildId)?.stop(true) },
+    stop(guildId) { players.get(guildId)?.player.stop(true) },
   }
 
   entry.calls = createCalls({

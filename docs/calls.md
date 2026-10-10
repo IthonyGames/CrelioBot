@@ -4,8 +4,8 @@ Join your KB's voice channel and talk. The team's Manager bot joins you, listens
 
 - **You join** → the bot joins within seconds and greets you.
 - **You talk** → each thing you say is transcribed, shown in the voice channel's chat and handed to the KB session, which answers out loud. Real work gets a Task thread, as usual, so the results stay readable. Only speech is sent: silence, breathing, a keyboard or a fan never reach the team.
-- **You leave while it works** → the bot stays in the channel and the team keeps working. When you come back, it gives you a short spoken update.
-- **You go to another team's call** → the bot follows you there and talks for that team. The first Call stays open: its team keeps working, and when you come back to its channel the bot follows you back and gives you that team's update.
+- **You leave while it works** → the bot stays in the channel and the team keeps working. What the team wanted to tell you is kept, and said the moment you're back.
+- **You switch to another team's call** → the bot goes with you: that team's Manager now listens and answers, and the first team knows you left for the other call. Its Call stays open while it keeps working; when you come back to its channel, the bot comes too and says right away what that team kept for you.
 - **"That's all for tonight"** → it says goodbye and leaves when you leave. Otherwise it stays until nobody has been there for 2 hours.
 - **Interrupt it** → start talking and it stops speaking. A cough or a noise doesn't count.
 
@@ -41,7 +41,7 @@ Join your KB's voice channel and talk. The team's Manager bot joins you, listens
   | `transcript` | true | Post the transcript in the voice channel's chat |
   | `vad` | | Speech detection: `mode` (WebRTC aggressiveness 0–3, default 2), `min_db` (-50: quieter is never speech), `voicing` (0.55: how voice-like a sound must be) |
 
-  The Call service log (`workspace/state/calls/service.log`) shows, for each thing you said, how much audio arrived and how much was speech: the place to look when a quiet voice gets ignored (lower `voicing` or `min_db`) or noise still gets through (raise them).
+  The Call service log (`workspace/state/calls/service.log`) shows, for each thing you said, how much audio arrived and how much was speech: the place to look when a quiet voice gets ignored (lower `voicing` or `min_db`) or noise still gets through (raise them). It also shows each thing the bot said and how long it took to say.
 
 - **Voice**: the bot speaks with the voice notes' settings (`crelio.json` → `voice`: `tts_model`, `voice`, `speed`).
 - **Privacy**: what you say is sent to OpenAI for transcription, like voice notes; speech detection runs on the PC, and audio without speech is never sent. The audio is not stored; the transcript is kept in `workspace/state/<kb>/call/utterances.jsonl` and in the voice channel's chat.
@@ -50,4 +50,5 @@ Join your KB's voice channel and talk. The team's Manager bot joins you, listens
 
 - **The bot doesn't join**: is the "CrelioBot - Calls" window open? `calls status`, then `workspace/state/calls/service.log`.
 - **It joins but doesn't answer**: the KB session may be restarting. The bot says so in the voice channel's chat. Talk again in a minute.
+- **It answers (🔊 in the chat) but you hear nothing**: check the bot's volume (right-click it in the voice channel). Then look at `service.log`: a `said … in 0.0 s` line or `could not play` means the audio never left; `voice-debug.log` next to it has the voice connection's details. Restarting the Calls window (or CrelioBot) reconnects it.
 - **"Busy in another call"**: someone is still in another KB's Call with the same bot.

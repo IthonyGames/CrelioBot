@@ -23,6 +23,7 @@ Setup
   doctor                      check prerequisites, bots and Discord layout
   bot add <agent>             register an Agent bot from a token typed locally
   bot invite [<agent>]        print invite links
+  bot avatars [--force]       give every bot its Agent's avatar (--force replaces one already set)
   kb add <path>               add a folder as a KB
   discord provision           create the Discord layout (channels, roles) from the Workspace
 

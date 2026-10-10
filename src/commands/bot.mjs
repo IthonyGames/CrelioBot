@@ -1,11 +1,12 @@
-// crelio bot add <agent> | invite [<agent>] | list
+// crelio bot add <agent> | invite [<agent>] | avatars [--force] | list
 // Tokens are read from workspace/.env or typed into a hidden prompt — never passed on the command line,
 // never seen by an agent, never posted in Discord.
 
 import { createInterface } from 'node:readline'
 import { ConfigError, agentName, loadInstance, setSecret } from '../instance.mjs'
 import { inviteUrl } from '../permissions.mjs'
-import { PORTAL_STEPS, registerBot, tokenEnvFor } from '../bots.mjs'
+import { PORTAL_STEPS, registerBot, setAvatar, tokenEnvFor } from '../bots.mjs'
+import { discordClient } from '../discord.mjs'
 
 export { PORTAL_STEPS }
 
@@ -39,6 +40,7 @@ export async function addBot({ workspace, repoDir, agent, log = console.log }) {
   if (r.activated) log('✔ activated on the gateway (required once before a bot can post)')
   for (const w of r.warnings) log(`⚠ ${w}`)
   if (r.in_server) log(`✔ display name in the server set to "${agentName(agent)}"`)
+  if (r.avatar === 'set') log('✔ avatar set')
   else if (r.invite_url) log(`→ ${r.in_server === false ? 'not in the server yet — invite it' : 'invite it to your server'}:\n  ${r.invite_url}`)
   return { agent, user_id: r.user_id, app_id: r.app_id }
 }
@@ -54,11 +56,25 @@ export default async function bot({ workspace, repoDir, sub, rest }) {
     }
     return
   }
+  if (sub === 'avatars') {
+    // Each registered bot gets its Agent's avatar (assets/avatars/, or workspace/avatars/ first).
+    const force = rest.includes('--force')
+    for (const [a, b] of Object.entries(instance.settings.bots ?? {})) {
+      const token = instance.secret(b.token_env)
+      if (!token) { console.log(`${agentName(a).padEnd(16)} ✖ no token`); continue }
+      try {
+        const client = discordClient(token)
+        const r = await setAvatar({ instance, agent: a, client, me: await client.get('/users/@me'), force })
+        console.log(`${agentName(a).padEnd(16)} ${{ set: '✔ avatar set', kept: '· has one already (--force to replace)', none: '· no avatar file' }[r]}`)
+      } catch (e) { console.log(`${agentName(a).padEnd(16)} ✖ ${e.message}`) }
+    }
+    return
+  }
   if (sub === 'list' || !sub) {
     for (const [a, b] of Object.entries(instance.settings.bots ?? {})) {
       console.log(`${agentName(a).padEnd(16)} ${instance.secret(b.token_env) ? '✔ token' : '✖ no token'}  ${b.user_id ? `bot ${b.user_id}` : 'not registered'}`)
     }
     return
   }
-  throw new ConfigError('Usage: crelio bot add <agent> | invite [<agent>] | list')
+  throw new ConfigError('Usage: crelio bot add <agent> | invite [<agent>] | avatars [--force] | list')
 }

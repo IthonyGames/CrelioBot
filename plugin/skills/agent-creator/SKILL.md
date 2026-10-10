@@ -52,6 +52,8 @@ The agent can't post without its own bot application. If `bot_ready` is false, p
 
 When the owner says it's done, call `mcp__crelio__bot_register(agent: <id>, approval_chat_id, approval_message_id)` with their message. If it returns an `invite_url`, give it to the owner (Add to server → Authorize), then remind them to lock the app down: **Installation → Install Link → None**, then **Bot → Public Bot OFF**.
 
+Its avatar: `bot_register` puts `workspace/avatars/<id>.png` on the bot when that file exists. To make one in the family's style, the Artist copies an SVG from CrelioBot's `assets/avatars/svg/`, changes the color and the prop, and exports a 512 px PNG; the owner drops it in `workspace/avatars/` and runs `crelio bot avatars` (docs/agent-avatars.md).
+
 ## 4. Introduce it
 
 No restart: the agent is live as soon as its bot is registered. Dispatch it once (with the `subagent_type` — and `definition`, when it is `general-purpose` — that `team` gives) to introduce itself in its channel: 2-3 lines, what it does, when to call it.

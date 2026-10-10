@@ -11,6 +11,7 @@
   "discord": {
     "category_id": "",
     "general_id": "",
+    "agents_category_id": "",
     "agents": {},
     "roles": {}
   },

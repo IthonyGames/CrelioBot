@@ -12,11 +12,11 @@ Run on a throwaway Discord server before each release (or after changing the run
 - [ ] `crelio status` lists every session as running; `stop-crelio.bat` stops them all
 
 ## Isolation
-- [ ] A message in KB A's #general is answered by A's session only
+- [ ] A message in KB A's General (💭Message) is answered by A's session only
 - [ ] Asking KB A's Manager to post in KB B's channel is refused
 
 ## Task flow
-- [ ] A request in a KB #general opens a Task thread on the message, titled with the requester
+- [ ] A request in a KB General opens a Task thread on the message, titled with the requester
 - [ ] KB Researcher posts first, under its own bot; parallel research wave when relevant
 - [ ] A Specialist escalates with numbered questions tagging the requester; replying under the question resumes that Specialist
 - [ ] The Manager posts the summary with results — a few plain sentences, no titles or "Decided/Next" labels — updates the task system, closes the thread
@@ -26,7 +26,7 @@ Run on a throwaway Discord server before each release (or after changing the run
 - [ ] A message in #artist gets a Side thread from the Artist; "approved" hands back to the Task thread
 
 ## Router
-- [ ] A request in the Global General about KB A lands in A's #general (quoted, linked) and becomes a Task thread
+- [ ] A request in the Global General about KB A lands in A's General (quoted, linked) and becomes a Task thread
 - [ ] "What's open everywhere?" lists open threads per KB
 
 ## Voice

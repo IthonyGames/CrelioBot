@@ -39,7 +39,7 @@ test('Router tools exist only in the Router; KB administration only in KB sessio
   assert.ok(k.includes('schedules') && k.includes('provision_agent') && !k.includes('route'))
 })
 
-test('a routed request reaches the KB General without a ping, and the request gets a ✅ instead of a reply', async () => {
+test('a routed request reaches the KB General without a ping, and the Global General gets nothing — no reply, no reaction', async () => {
   const { instance, fake, env } = await setup()
   const router = startMcp(env('router'))
   const request = fake.addMessage(instance.globalGeneralId, { content: 'Add a FAQ page', author: { id: '380127725123403779', username: 'anthony', global_name: 'Anthony' } })
@@ -57,8 +57,7 @@ test('a routed request reaches the KB General without a ping, and the request ge
   assert.deepEqual(sent.json.allowed_mentions, { parse: [] })
   assert.equal(sent.json.flags & 4096, 4096, 'silent: no push notification')
   assert.equal(fake.posts().filter(p => p.path === `/channels/${instance.globalGeneralId}/messages`).length, 0, 'nothing posted in the Global General')
-  const reaction = fake.state.requests.find(r => r.method === 'PUT' && r.path.includes(`/messages/${request.id}/reactions/`))
-  assert.ok(reaction && decodeURIComponent(reaction.path).includes('✅'))
+  assert.equal(fake.state.requests.filter(r => r.method === 'PUT' && r.path.includes('/reactions/')).length, 0, 'no reaction on the request')
   assert.match(bad.text, /Unknown KB "nope"/)
 })
 

@@ -24,7 +24,7 @@ No process of ours holds the Discord gateway: each session's official plugin doe
 
 ## A Task, end to end
 
-1. A person writes in a KB's `#general`. The plugin (Manager bot) reacts 👀 and pushes a `<channel>` event into that KB's session.
+1. A person writes in a KB's `#general`. The plugin (Manager bot) pushes a `<channel>` event into that KB's session. It adds no receipt reaction: `ack_reaction` in `crelio.json` turns one on (e.g. `"👀"`).
 2. The Manager (main thread) routes it (`whereami` when unclear), then `thread_list` → reuse a Task thread or `thread_open` on the message. Task system sync per the `task-system` skill; `thread_meta` stores task id, Requester, Hops.
 3. The Manager dispatches Specialists as background subagents, KB Researcher first, then the research wave in parallel. Each posts in the thread **with its own bot** (`post(agent: …)`), may call another Specialist directly, and returns a `STATUS:` block.
 4. Escalation: a Specialist posts numbered questions tagging the person, returns `needs-input` with the message id; the Manager records `waiting_on`. The person replies under the question → the plugin delivers it → `whereami` shows `replied_to.agent` → the Manager continues that subagent (`SendMessage`) with the answer.
@@ -36,7 +36,7 @@ Agents never talk to each other *through* Discord (the official plugin drops bot
 
 ## Router → KB
 
-The Router posts the request in the KB's General with `route` (as that KB's Manager bot, silently, naming the author without a mention and copying the request's attachments), puts ✅ on the original instead of replying, and then sends the KB session a cross-session message (`SendMessage` to `crelio-<kb>`, local named pipe / Unix socket) naming the posted message. The KB's Task thread opener is the author's one ping. KB sessions accept cross-session messages (`crossSessionInbound: accept` in their generated settings).
+The Router posts the request in the KB's General with `route` (as that KB's Manager bot, silently, naming the author without a mention and copying the request's attachments), leaves the original untouched (no reply, no reaction), and then sends the KB session a cross-session message (`SendMessage` to `crelio-<kb>`, local named pipe / Unix socket) naming the posted message. The KB's Task thread opener is the author's one ping. KB sessions accept cross-session messages (`crossSessionInbound: accept` in their generated settings).
 
 The launcher strips the parent session's identity variables (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, …) from every session it starts: inherited, they make a session believe it is nested, and it never registers for cross-session messages (found in spike 01).
 

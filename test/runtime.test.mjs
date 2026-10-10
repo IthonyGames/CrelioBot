@@ -66,6 +66,7 @@ test('the plugin access file lets everyone talk in the KB General and Agent chan
   const expected = [kb.discord.general_id, ...Object.values(kb.discord.agents)].sort()
   assert.deepEqual(Object.keys(access.groups).sort(), expected)
   for (const g of Object.values(access.groups)) assert.deepEqual(g, { requireMention: false, allowFrom: [] })
+  assert.equal(access.ackReaction, '', 'no receipt reaction on people\'s messages')
 })
 
 test('two KBs never share a channel scope', () => {

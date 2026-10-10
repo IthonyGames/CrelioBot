@@ -36,7 +36,7 @@ Run on a throwaway Discord server before each release (or after changing the run
 - [ ] "Turn on the Artist" (owner) → its channel and role appear, it can be dispatched right away
 - [ ] "Remove the Coder" → its channel and role in that KB are gone; the bot still works in other KBs
 - [ ] A non-owner asking for a team change → the Manager tags the owner for approval
-- [ ] A Router routing → one ✅ on the request, one ping in the KB thread, nothing else in the Global General
+- [ ] A Router routing → one ping in the KB thread; nothing in the Global General (no reply, no reaction)
 
 ## Calls (Call service installed)
 - [ ] "Turn on Calls" → an **Appel** / **Call** voice channel appears in the KB category

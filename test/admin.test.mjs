@@ -223,6 +223,24 @@ test('the default layout: CrelioBot on top, each KB in bold italic capitals with
   assert.equal(styled('Santé 2', 'bold-italic'), '𝙎𝙖𝙣𝙩𝙚́ 𝟮', 'accents kept, digits too')
 })
 
+test('a KB General moved into a category of its own: that becomes the KB\'s category, and the old one keeps the agents', async () => {
+  const { ws } = makeWorkspace({ kbs: ['alpha'], settings: { global_general: {} }, profiles: { alpha: { name: 'Quillz', discord: {} } } })
+  const fake = await startFakeDiscord({ guildId: loadInstance(ws, { repoDir: REPO }).guildId, channels: [], bots: {} })
+  const client = discordClient('token-DISCORD_TOKEN_MANAGER', { api: fake.api })
+  await provisionKb({ instance: loadInstance(ws, { repoDir: REPO }), client, kbId: 'alpha' })
+  const before = loadInstance(ws, { repoDir: REPO }).kb('alpha').discord
+  // The owner's restyle: a new category for the General, the old one renamed for the agents.
+  fake.state.channels.set('900', { id: '900', type: 4, name: '𝙌𝙐𝙄𝙇𝙇𝙕 (new)', parent_id: null })
+  fake.state.channels.get(before.general_id).parent_id = '900'
+  const posts = fake.state.requests.filter(r => r.method === 'POST').length
+  const k = await provisionKb({ instance: loadInstance(ws, { repoDir: REPO }), client, kbId: 'alpha' })
+  await fake.close()
+  assert.equal(fake.state.requests.filter(r => r.method === 'POST').length, posts, 'nothing created')
+  assert.equal(k.category_id, '900')
+  assert.equal(k.agents_category_id, before.agents_category_id)
+  assert.equal(loadInstance(ws, { repoDir: REPO }).kb('alpha').discord.category_id, '900')
+})
+
 test('"discord_fonts": false keeps plain letters', async () => {
   const { ws } = makeWorkspace({ kbs: ['alpha'], settings: { global_general: {}, discord_fonts: false }, profiles: { alpha: { name: 'Quillz', discord: {} } } })
   const fake = await startFakeDiscord({ guildId: loadInstance(ws, { repoDir: REPO }).guildId, channels: [], bots: {} })

@@ -6,7 +6,7 @@ Vocabulary: [CONTEXT.md](../CONTEXT.md). Decisions and why: [docs/adr/](adr/).
 
 ```
 start-crelio.bat ─► crelio start ─► one console window per session (Windows Terminal tab if installed; tmux on macOS/Linux)
-                                     └─ crelio run <id>   restart loop: regenerate files → (git pull) → claude … → wait → repeat
+                                     └─ crelio run <id>   restart loop: each start is a fresh `crelio run-once` (current code) → regenerate files → (git pull) → claude … → wait → repeat
 
 claude (one per KB, cwd = KB folder, --agent creliobot:manager, --name crelio-<kb>)
  ├─ plugin:discord@claude-plugins-official   official channel: Discord gateway as the Manager bot,

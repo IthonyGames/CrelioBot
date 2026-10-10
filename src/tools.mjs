@@ -150,9 +150,14 @@ export function createTools({
     return { edited: true }
   }
 
+  /** Reactions go on agents' messages only: owners read reactions on their own messages as noise. */
   async function react({ agent = 'manager', chat_id, message_id, emoji }) {
     const t = await target(chat_id)
-    await botClient(agent).put(`/channels/${t.id}/messages/${snowflake(message_id, 'message_id')}/reactions/${encodeURIComponent(need(emoji, 'emoji'))}/@me`)
+    const id = snowflake(message_id, 'message_id')
+    const client = botClient(agent)
+    const msg = await client.get(`/channels/${t.id}/messages/${id}`)
+    if (!msg.author?.bot) throw new ToolError('No reactions on people\'s messages — the owner asked for none (not even ✅ or 👍). If something needs saying, post it; otherwise say nothing.')
+    await client.put(`/channels/${t.id}/messages/${id}/reactions/${encodeURIComponent(need(emoji, 'emoji'))}/@me`)
     return { reacted: true }
   }
 

@@ -108,7 +108,8 @@ export function buildSession(instance, id, { parentEnv = process.env, nodePath =
     crossSessionInbound: 'accept',
     permissions: {
       allow: [...TEAM_TOOLS, ...(permission === 'guarded' ? GUARDED_RULES : []), ...extraAllow],
-      deny: [],
+      // The plugin's react would bypass mcp__crelio__react, which refuses reactions on people's messages.
+      deny: ['mcp__plugin_discord_discord__react'],
     },
   }
   if (permission === 'guarded') {

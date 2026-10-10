@@ -59,45 +59,63 @@ export function spawnClaude(claudePath, { args, cwd, env }) {
   return spawn(claudePath, args, opts)
 }
 
-/** The restart loop for one session (runs inside its window). */
-export async function runSession(workspaceDir, id, { repoDir } = {}) {
-  const first = loadInstance(workspaceDir, { repoDir })
-  const logFile = join(first.stateDir(id), 'session.log')
-  mkdirSync(first.stateDir(id), { recursive: true })
-  const log = msg => {
+function sessionLog(instance, id) {
+  const logFile = join(instance.stateDir(id), 'session.log')
+  mkdirSync(instance.stateDir(id), { recursive: true })
+  return msg => {
     const line = `[${new Date().toISOString()}] ${msg}`
     console.log(line)
     appendFileSync(logFile, line + '\n')
   }
+}
+
+/**
+ * The restart loop for one session (runs inside its window). Each start is a fresh `crelio run-once`
+ * process: this loop stays up for days, and would otherwise keep generating the session's files with
+ * the code it started with — an update of CrelioBot (git pull) now applies at the next restart.
+ */
+export async function runSession(workspaceDir, id, { repoDir } = {}) {
+  const first = loadInstance(workspaceDir, { repoDir })
+  const log = sessionLog(first, id)
   // Ctrl+C belongs to the claude session in this window; the loop itself ignores it.
   process.on('SIGINT', () => {})
+  const cli = join(first.repoDir, 'bin', 'crelio.mjs')
 
   await runLoop({
     shouldStop: () => existsSync(stopFlag(first)),
     sleep: ms => new Promise(r => setTimeout(r, ms)),
     log,
-    start: async () => {
-      // Re-read the Workspace each time so profile edits apply on the next restart.
-      const instance = loadInstance(workspaceDir, { repoDir })
-      const session = buildSession(instance, id)
-      writeSessionFiles(session)
-      const kb = id === 'router' ? null : instance.kb(id)
-      if (kb?.pull_on_start && existsSync(join(kb.path, '.git'))) {
-        const pull = pullFastForward(kb.path)
-        log(pull.ok ? `git pull: ${pull.reason}` : `git pull skipped — ${pull.reason}. Starting on the current state.`)
-      }
-      const claude = instance.settings.claude_path ?? findExecutable('claude', session.env)
-      if (!claude) throw new Error('Claude Code (claude) not found on PATH — install it, or set "claude_path" in crelio.json')
-      log(`starting ${session.name} (${session.permission}) in ${session.cwd}`)
-      const child = spawnClaude(claude, session)
-      writeFileSync(join(session.stateDir, 'claude.pid'), String(child.pid))
-      return new Promise(resolve => {
-        child.on('exit', code => resolve(code))
-        child.on('error', err => { log(`could not start claude: ${err.message}`); resolve(-1) })
-      })
-    },
+    start: () => new Promise(resolve => {
+      const child = spawn(process.execPath, [cli, 'run-once', id, '--workspace', first.workspaceDir], { stdio: 'inherit', env: process.env })
+      child.on('exit', code => resolve(code))
+      child.on('error', err => { log(`could not start: ${err.message}`); resolve(-1) })
+    }),
   })
   log('stop flag set — loop ended')
+}
+
+/** One start of a session: regenerate its files, (git pull), run claude until it exits. Returns its exit code. */
+export async function runOnce(workspaceDir, id, { repoDir } = {}) {
+  process.on('SIGINT', () => {}) // Ctrl+C is claude's
+  // Re-read the Workspace each time so profile edits apply on the next restart.
+  const instance = loadInstance(workspaceDir, { repoDir })
+  const log = sessionLog(instance, id)
+  const session = buildSession(instance, id)
+  writeSessionFiles(session)
+  const kb = id === 'router' ? null : instance.kb(id)
+  if (kb?.pull_on_start && existsSync(join(kb.path, '.git'))) {
+    const pull = pullFastForward(kb.path)
+    log(pull.ok ? `git pull: ${pull.reason}` : `git pull skipped — ${pull.reason}. Starting on the current state.`)
+  }
+  const claude = instance.settings.claude_path ?? findExecutable('claude', session.env)
+  if (!claude) throw new Error('Claude Code (claude) not found on PATH — install it, or set "claude_path" in crelio.json')
+  log(`starting ${session.name} (${session.permission}) in ${session.cwd}`)
+  const child = spawnClaude(claude, session)
+  writeFileSync(join(session.stateDir, 'claude.pid'), String(child.pid))
+  return new Promise(resolve => {
+    child.on('exit', code => resolve(code))
+    child.on('error', err => { log(`could not start claude: ${err.message}`); resolve(-1) })
+  })
 }
 
 /** Opens one window per session. */

@@ -17,16 +17,17 @@ Grilling (see the `grilling` skill) interviews a person until every branch of th
    - classify it:
      - **Settled by Evidence** → decide; cite the Evidence.
      - **Taste, priority, money, brand, risk appetite, or no Evidence** → it belongs to a person. Prepare your recommendation and why.
-4. **Post the round** — all questions, numbered, one line each:
+4. **Post the round** as a text (team protocol §2) — the open questions numbered, one sentence each with your pick and why, then what you settled yourself:
 
    ```
-   🧠 **Round <n> — <Task>**
-   ✅ **Q1 — <title>**: <answer> — <Evidence, short>
-   ❓ **Q2 — <title>**: <question, options> ➡️ <recommendation> — <why, short>
-   <@person> your call on Q2 (“ok” = recommendations).
+   <@person> a few questions before we go on:
+   1. Should the button come back after the first round? I'd keep it, so you can go as deep as you want.
+   2. …
+   Settled on our side (tell me if you disagree): free accounts get it too, as decided on Sept. 6.
+   Say ok and I'll go with my picks.
    ```
 
-   Decided questions are shown so the person can override them; the person who should decide open ones (usually the Requester) is tagged once, at the end. Long context goes in an attached file, not the round.
+   Decided questions are shown so the person can override them; the person who should decide open ones (usually the Requester) is tagged once. Long context goes in an attached file, not the round.
 5. **If any question is open**, stop and return `STATUS: needs-input` with the round's message id. The Manager brings the answers back; "ok" means "accept all recommendations".
 6. **Recompute the frontier** with the new answers and repeat. Done when the frontier is empty: every branch visited, nothing silently assumed.
 

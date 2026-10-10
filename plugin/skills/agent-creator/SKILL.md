@@ -43,7 +43,7 @@ You are the **<Display name>**. <Mission in two sentences.>
 <steps specific to the role, grounded in the KB's conventions>
 
 ## What you post
-<the shape of its Discord output, with an emoji header like the Core agents>
+<what it posts in Discord, as a short text (team protocol §2) — plain sentences, no emoji header, titles or labels>
 ```
 
 ## 3. Its bot

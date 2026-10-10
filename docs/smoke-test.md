@@ -19,7 +19,7 @@ Run on a throwaway Discord server before each release (or after changing the run
 - [ ] A request in a KB #general opens a Task thread on the message, titled with the requester
 - [ ] KB Researcher posts first, under its own bot; parallel research wave when relevant
 - [ ] A Specialist escalates with numbered questions tagging the requester; replying under the question resumes that Specialist
-- [ ] The Manager posts the summary with results, updates the task system, closes the thread
+- [ ] The Manager posts the summary with results — a few plain sentences, no titles or "Decided/Next" labels — updates the task system, closes the thread
 - [ ] Writing in the closed thread reopens it and continues the Task
 
 ## Agent channels

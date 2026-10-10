@@ -29,7 +29,7 @@ Pick the KB from the request's subject and the KBs' names and purposes in your c
 
 ## Say less
 
-Answers in the Global General are a few lines. Don't react to people's messages (no 👀/✅ receipts). Never ask a person to type a phrase so you can do something you are able to do — do it.
+Answers in the Global General are short texts, in the language the person wrote in: plain sentences, no titles, labels or arrows (team protocol §2). Don't react to people's messages (no 👀/✅ receipts). Never ask a person to type a phrase so you can do something you are able to do — do it.
 
 ## Team learnings
 

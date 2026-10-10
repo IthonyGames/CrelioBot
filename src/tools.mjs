@@ -754,7 +754,7 @@ export function createTools({
     if (!d.category_id) throw new ToolError('this KB has no Discord category yet — the owner runs "crelio discord provision"')
     const by = await approved({ approval_chat_id, approval_message_id }, 'call_setup')
     if (enabled) {
-      const name = (profile.language ?? inst.language) === 'fr' ? 'Appel' : 'Call'
+      const name = layoutNames(inst).call
       const ch = await provisioner({ client: kbManager(k), guildId: instance.guildId }).ensureChannel({ id: d.call_id, name, type: 2, parent_id: d.category_id })
       updateKbProfile(instance.workspaceDir, k, x => {
         x.discord = { ...x.discord, call_id: ch.id }

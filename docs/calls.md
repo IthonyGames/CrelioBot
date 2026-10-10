@@ -18,7 +18,7 @@ Join your KB's voice channel and talk. The team's Manager bot joins you, listens
    ```
    It installs `discord.js`, `@discordjs/voice` and `@snazzah/davey` into `calls/`, plus `opusscript` and `@echogarden/fvad-wasm` to tell speech from noise. Discord requires end-to-end encrypted voice, and that takes native code the rest of CrelioBot does without ([ADR-0007](adr/0007-calls-are-an-optional-service-with-dependencies.md)). After updating CrelioBot, run it again: it installs what a new version needs.
 3. **Restart CrelioBot** (`stop-crelio.bat`, then `start-crelio.bat`). A "CrelioBot - Calls" window joins the others.
-4. **Turn Calls on for a team**: in its `#general`, ask the Manager, for example "active le mode appel". It creates the voice channel (**Appel** or **Call**) in the KB's category. To turn them off, ask again.
+4. **Turn Calls on for a team**: in its General (`💭Message`), ask the Manager, for example "active le mode appel". It creates the voice channel (**🔈𝘊𝘢𝘭𝘭**) in the KB's category. To turn them off, ask again.
 
 `node bin/crelio.mjs calls status` shows whether the service runs and which teams have Calls on.
 

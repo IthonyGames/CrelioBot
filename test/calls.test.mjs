@@ -372,7 +372,7 @@ test('call_setup turns Calls on with a new voice channel the session hears; the 
   await mcp.close(); await fake.close()
   assert.equal(res.isError, false, res.text)
   const created = fake.state.channels.get(res.data.channel_id)
-  assert.deepEqual([created.name, created.type, created.parent_id], ['Appel', 2, d.category_id])
+  assert.deepEqual([created.name, created.type, created.parent_id], ['🔈𝘊𝘢𝘭𝘭', 2, d.category_id])
   const after = loadInstance(ws, { repoDir: REPO })
   assert.equal(after.kb('alpha').call.enabled, true)
   assert.ok(after.channelsOf('alpha').includes(res.data.channel_id), 'its text chat is heard')

@@ -8,7 +8,7 @@ import { ConfigError, loadInstance, updateKbProfile } from '../instance.mjs'
 import { callsInstalled } from '../launcher.mjs'
 import { serviceFile } from '../calls.mjs'
 import { discordClient } from '../discord.mjs'
-import { provisioner } from '../provision.mjs'
+import { layoutNames, provisioner } from '../provision.mjs'
 import { writeAccess } from '../runtime.mjs'
 
 export default async function calls({ workspace, repoDir, sub, rest = [] }) {
@@ -28,7 +28,7 @@ export default async function calls({ workspace, repoDir, sub, rest = [] }) {
     const d = kb.discord ?? {}
     if (sub === 'enable') {
       if (!d.category_id) throw new ConfigError(`KB "${kb.id}" has no Discord category yet — run "crelio discord provision" first`)
-      const name = (kb.language ?? instance.language) === 'fr' ? 'Appel' : 'Call'
+      const name = layoutNames(instance).call
       const ch = await provisioner({ client: discordClient(instance.requireToken(kb.id, 'manager')), guildId: instance.guildId }).ensureChannel({ id: d.call_id, name, type: 2, parent_id: d.category_id })
       updateKbProfile(workspace, kb.id, k => { k.discord = { ...k.discord, call_id: ch.id }; k.call = { ...k.call, enabled: true } })
       console.log(`✔ Calls on for ${kb.name ?? kb.id} — voice channel "${name}" (${ch.id})${callsInstalled(repoDir) ? '' : '\n  → install the Call service: crelio calls install, then restart'}`)

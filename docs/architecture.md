@@ -57,6 +57,21 @@ Tokens stay out of Discord. The owner puts a token in `workspace/.env` on the PC
 
 Profiles written before the Default team existed list `agents.disabled` instead of `agents.enabled`. They keep every agent but the disabled ones. Their first Team change rewrites them as an explicit `enabled` list.
 
+## Calls (optional, ADR-0007)
+
+```
+Discord voice channel ⇄ Call service (calls/service.mjs: discord.js + @discordjs/voice + DAVE)
+                          │  logic: src/calls.mjs (who is in which Call, utterances, speech)
+                          ├─ utterance → speech only (src/vad.mjs) → Ogg (src/ogg.mjs) → transcription → the KB session's inbox
+                          └─ local HTTP control ◀── call_say / call_end / call_status (KB session's MCP)
+```
+
+- **The inbox.** Claude Code gives each session an inbox socket and exports its address and token to hooks. The plugin's SessionStart hook writes them to `state/<kb>/inbox.json`. The service posts each Call event there (`{"type":"auth"}` line, then `{"type":"user", "message": {"content"}}`), and an idle session starts a turn with it. Nothing is armed or re-armed by the model.
+- **Utterances.** `@discordjs/voice` hands over each person's Opus packets until `silence_ms` without any. Each packet is decoded to 16 kHz mono as it arrives and checked for speech (`src/vad.mjs`): a 20 ms frame is speech when the WebRTC voice detector, the level and the voicing (the periodicity of a voice, which breath, clicks and noise lack) agree. A segment with less than `min_speech_ms` of speech is dropped; otherwise only its speech, with a little padding, is wrapped into Ogg (the original packets, not re-encoded) and transcribed. Segments closer than `merge_ms` are joined. Transcription uses the language people speak (`voice.language`, or detected) and a vocabulary (KB and agent names); segments the model itself marks as no speech, and what it invents from noise (subtitle credits, bare links), are dropped. Every utterance is logged to `state/<kb>/call/utterances.jsonl`, which is what lets the owner approve a Team change by voice.
+- **Speech.** `call_say` strips markdown, splits into sentences, and synthesizes the next chunk while one plays. `barge_ms` of someone's speech over the bot stops it (barge-in); noise doesn't. When nobody is there, the text is kept, including what was cut off when the last person left; when someone is back, the service says it at once (the session may be mid-turn) and the "is back" event tells the session what was said. Each playback gets its own player per voice connection and a watchdog: audio that can't start within 5 s is logged and skipped, never left blocking the queue. `voice-debug.log` keeps the connection's gateway and DAVE events.
+- **Presence.** The service follows voice-state updates. It joins when someone enters a Call channel and stays when everyone leaves. It leaves once `call_end` was asked and the last person is gone, or after `idle_minutes` alone. A bot holds one voice connection per server, but each KB keeps its own Call: when people switch to another KB's channel, the bot goes with them (the service moves the connection with `rejoin()` — `joinVoiceChannel()` on a live connection only asks Discord to move, and the library's next automatic reconnect would take the bot back) and greets them in the new KB's name at once (both sessions are told: the one left behind that it is off the air, the new one where they came from), and the Call they left stays open (its session keeps working, what it says is kept) until they come back. Only a Call that still has people keeps the bot; another KB's Call waits for it.
+- **Files.** `state/<kb>/call/state.json` holds the live Call, which the session context shows after a restart. `state/calls/service.json` holds the control port and token. `state/calls/service.log` is the service log.
+
 ## Restarts
 
 A session that exits restarts after 3 s (backing off to 60 s when it keeps crashing). On start, the plugin's SessionStart hook injects the session context: identity, roster, task adapter, Schedules to arm, the last 5 messages of the General and of every open thread, recent Team learnings. Unfinished Tasks resume only when someone continues them.
@@ -71,6 +86,8 @@ A session that exits restarts after 3 s (backing off to 60 s when it keeps crash
 | `mcp.json` | The Crelio MCP server for this session |
 | `threads.json` | Thread registry: kind, Task id, Requester, owning agent, parent, Hops, waiting_on |
 | `claude.pid`, `session.log`, `window.cmd` | Launcher bookkeeping |
+| `inbox.json` | The session's inbox address and token, written by the SessionStart hook, read by the Call service |
+| `call/state.json`, `call/utterances.jsonl` | The live Call and every Utterance (when Calls are on) |
 
 ## Permission levels (per KB, ADR-0006)
 

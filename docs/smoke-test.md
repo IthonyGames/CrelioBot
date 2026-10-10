@@ -32,6 +32,22 @@ Run on a throwaway Discord server before each release (or after changing the run
 ## Voice
 - [ ] A voice message is understood; the reply includes a real voice message (waveform bubble) from the agent's bot
 
+## Team changes (from Discord, no restart)
+- [ ] "Turn on the Artist" (owner) → its channel and role appear, it can be dispatched right away
+- [ ] "Remove the Coder" → its channel and role in that KB are gone; the bot still works in other KBs
+- [ ] A non-owner asking for a team change → the Manager tags the owner for approval
+- [ ] A Router routing → one ping in the KB thread; nothing in the Global General (no reply, no reaction)
+
+## Calls (Call service installed)
+- [ ] "Turn on Calls" → an **Appel** / **Call** voice channel appears in the KB category
+- [ ] Join it → the bot joins and greets you within seconds
+- [ ] Ask something → transcript in the voice chat (🎙️), a spoken answer (🔊), a Task thread for real work
+- [ ] Talk over the bot → it stops speaking
+- [ ] Leave while it works, come back → a short spoken update of where things stand
+- [ ] Switch to another KB's call → the bot comes along and that KB answers; switch back → the bot comes back and says at once what the first KB kept for you
+- [ ] Stay silent a minute → nothing appears in the voice chat
+- [ ] "C'est tout pour ce soir", then leave → the bot leaves too
+
 ## Restart memory
 - [ ] Restart mid-Task: the session context lists the thread with its last messages; "continue" resumes it; a new request is handled as new
 

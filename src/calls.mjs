@@ -2,7 +2,7 @@
 // (calls/service.mjs, its own dependencies — ADR-0007) holds the Discord voice connection; everything
 // else lives here, dependency-free and testable:
 //   - who is in which Call, when the bot joins, stays and leaves;
-//   - utterances → Ogg → transcription → the KB session's inbox (it wakes up and answers);
+//   - utterances → speech only (src/vad.mjs) → Ogg → transcription → the KB session's inbox (it wakes up and answers);
 //   - what the session says back (call_say) → speech → played in the call, or kept for when people return;
 //   - the control server the session's MCP tools talk to.
 
@@ -14,14 +14,15 @@ import { join } from 'node:path'
 import { agentName } from './instance.mjs'
 import { FLAGS } from './discord.mjs'
 import { oggFromOpus } from './ogg.mjs'
+import { keepSpeech, VAD_DEFAULTS } from './vad.mjs'
+import { cleanTranscript } from './voice.mjs'
 
 export class CallError extends Error { name = 'CallError' }
 
-export const CALL_DEFAULTS = { silence_ms: 800, merge_ms: 700, min_speech_ms: 400, idle_minutes: 120, transcript: true }
+// min_speech_ms: detected speech an utterance needs (less is noise). barge_ms: speech that interrupts the bot.
+// vad: speech detection settings (VAD_DEFAULTS in src/vad.mjs).
+export const CALL_DEFAULTS = { silence_ms: 800, merge_ms: 700, min_speech_ms: 200, barge_ms: 300, idle_minutes: 120, transcript: true, vad: {} }
 const FRAME_MS = 20
-
-// What speech-to-text invents from silence or noise — never something a person said to the team.
-const HALLUCINATION = /amara\.org|sous-titr|merci d'avoir regardé|thanks? (you )?for watching|subtitles by|^\W*$|^(merci|thank you|you)\W*$/i
 
 // ------------------------------------------------------------------ the KB session's inbox
 // Claude Code gives every session an inbox (cross-session messaging) and exports its address to hooks.
@@ -106,18 +107,17 @@ export function createCalls({
   timers = { setTimeout, clearTimeout },
 }) {
   const calls = new Map() // kb id → Call
-  const speech = new Map() // `${kb}:${user}` → { name, parts: Promise[], timer }
+  const pending = new Map() // `${kb}:${user}` → { name, parts: Promise[], timer } — words waiting for the end of a sentence
   const queues = new Map() // guild id → promise chain of speech
 
   const enabledKbs = () => [...instance.kbs.values()].filter(k => k.call?.enabled && k.discord?.call_id && owns(k.id))
   const kbOfChannel = channelId => enabledKbs().find(k => k.discord.call_id === channelId)?.id ?? null
   const config = kbId => ({ ...CALL_DEFAULTS, ...instance.kb(kbId).call })
-  const language = kbId => instance.kb(kbId).language ?? instance.language
 
   function call(kbId) {
     let c = calls.get(kbId)
     if (!c) {
-      c = { kb: kbId, channelId: instance.kb(kbId).discord.call_id, humans: new Map(), active: false, endRequested: false, held: [], since: null, leftAt: null, lastActivity: now(), epoch: 0, interrupted: false, seq: 0 }
+      c = { kb: kbId, channelId: instance.kb(kbId).discord.call_id, humans: new Map(), active: false, endRequested: false, held: [], outbox: [], since: null, leftAt: null, lastActivity: now(), epoch: 0, interrupted: false, seq: 0 }
       calls.set(kbId, c)
     }
     c.channelId = instance.kb(kbId).discord.call_id
@@ -189,7 +189,8 @@ export function createCalls({
     }
   }
 
-  async function humanLeft(kbId, guildId, userId, name) {
+  /** `to`: the KB whose call they went to, when they moved straight to another Call channel. */
+  async function humanLeft(kbId, guildId, userId, name, { to = null } = {}) {
     const c = calls.get(kbId)
     if (!c?.humans.has(userId)) return
     c.humans.delete(userId)
@@ -200,12 +201,28 @@ export function createCalls({
     } else if (c.endRequested) {
       await endCall(c, guildId, `📞 [Call] ${name} left and the Call is over — I left the voice channel.`)
     } else {
+      const cut = silence(c, guildId, { keep: true }) // nobody hears the rest: it waits with what is held
       c.leftAt = now()
       c.lastActivity = now()
       persist(c)
-      await tell(c, `📞 [Call] ${name} left — nobody is in the call now. I stay in the channel. Keep working: what you call_say now is kept and you'll give them an update when they come back.`)
+      const where = to
+        ? `went to the ${instance.kb(to).name ?? to} call — the bot follows them there (one bot, one voice channel per server). This Call stays open`
+        : 'left — nobody is in the call now. I stay in the channel'
+      await tell(c, `📞 [Call] ${name} ${where}.${cut ? ' You were cut off mid-reply; the rest is kept.' : ''} Keep working: what you call_say now is kept and you'll give them an update when they come back.`)
     }
     await serveWaiting(guildId)
+  }
+
+  /** Stops what the bot says (and was about to say) in this Call; keep = hold it for when people are back. */
+  function silence(c, guildId, { keep = false } = {}) {
+    const rest = c.outbox.splice(0).map(o => o.chunks.slice(o.i).join(' ')).filter(Boolean)
+    if (keep) c.held.push(...rest)
+    c.epoch++
+    if (c.speaking) {
+      c.speaking = false
+      adapter.stop(guildId)
+    }
+    return rest.length
   }
 
   /** A call that waited for the bot (busy elsewhere) gets it once the other call is empty. */
@@ -224,8 +241,8 @@ export function createCalls({
   }
 
   async function endCall(c, guildId, text) {
+    silence(c, guildId)
     if (adapter.connectedChannel(guildId) === c.channelId) await adapter.leave(guildId)
-    c.epoch++
     const unsaid = c.held.splice(0)
     Object.assign(c, { active: false, endRequested: false, leftAt: null, since: null })
     persist(c)
@@ -233,8 +250,8 @@ export function createCalls({
   }
 
   function dropSpeech(kbId, userId) {
-    const s = speech.get(`${kbId}:${userId}`)
-    if (s) { timers.clearTimeout(s.timer); speech.delete(`${kbId}:${userId}`) }
+    const s = pending.get(`${kbId}:${userId}`)
+    if (s) { timers.clearTimeout(s.timer); pending.delete(`${kbId}:${userId}`) }
   }
 
   function vocabulary(kbId) {
@@ -245,50 +262,60 @@ export function createCalls({
 
   async function transcribe(kbId, packets) {
     try {
-      const text = await voice(kbId).transcribe(oggFromOpus(packets), { filename: 'utterance.ogg', contentType: 'audio/ogg', language: language(kbId), prompt: vocabulary(kbId) })
-      return HALLUCINATION.test(text.trim()) ? null : text.trim()
+      // The language is what people speak (voice.language), not the KB's: unset, the model detects it.
+      const text = await voice(kbId).transcribe(oggFromOpus(packets), { filename: 'utterance.ogg', contentType: 'audio/ogg', prompt: vocabulary(kbId) })
+      return cleanTranscript(text) || null
     } catch (e) {
       if (!/empty/.test(e.message)) log(`[${kbId}] transcription failed: ${e.message}`)
       return null
     }
   }
 
-  /** One segment of someone's speech (the service cuts segments at `silence_ms` of silence). */
-  function utterance({ channelId, userId, name, packets }) {
+  /**
+   * One segment of someone's audio (the service cuts segments at `silence_ms` without packets). `speech`:
+   * one flag per packet from the speech detector — only the speech is transcribed, and a segment without
+   * enough of it (breathing, a keyboard, noise) is dropped before speech-to-text can invent words from it.
+   */
+  function utterance({ channelId, userId, name, packets, speech }) {
     const kbId = kbOfChannel(channelId)
     if (!kbId) return
     const c = call(kbId)
     if (!c.active || !c.humans.has(userId)) return
     const cfg = config(kbId)
-    if (packets.length * FRAME_MS < cfg.min_speech_ms) return
     const key = `${kbId}:${userId}`
-    const s = speech.get(key) ?? { name: name ?? c.humans.get(userId), parts: [] }
-    s.parts.push(transcribe(kbId, packets))
-    timers.clearTimeout(s.timer)
+    const s = pending.get(key) ?? { name: name ?? c.humans.get(userId), parts: [] }
+    const heard = speech ? keepSpeech(speech, { ...VAD_DEFAULTS, ...cfg.vad }) : { speech_ms: packets.length * FRAME_MS, keep: null }
+    const enough = heard.speech_ms >= cfg.min_speech_ms
+    log(`[${kbId}] ${s.name}: ${packets.length * FRAME_MS} ms of audio, ${heard.speech_ms} ms of speech${enough ? '' : ' — ignored'}`)
+    if (enough) s.parts.push(transcribe(kbId, heard.keep ? heard.keep.map(i => packets[i]) : packets))
+    if (!s.parts.length) return
+    timers.clearTimeout(s.timer) // words already waiting go out even when this segment was noise
     s.timer = timers.setTimeout(() => flush(kbId, userId), cfg.merge_ms)
-    speech.set(key, s)
+    pending.set(key, s)
   }
 
-  /** Someone started talking: hold their pending words (more is coming) and stop the bot's speech (barge-in). */
-  function speakingStart({ guildId, channelId, userId }) {
+  /** Someone's audio started: hold their waiting words, more may be coming. */
+  function speakingStart({ channelId, userId }) {
     const kbId = kbOfChannel(channelId)
     if (!kbId) return
-    const s = speech.get(`${kbId}:${userId}`)
+    const s = pending.get(`${kbId}:${userId}`)
     if (s) timers.clearTimeout(s.timer)
-    const c = calls.get(kbId)
-    if (c?.speaking && c.humans.has(userId)) {
-      c.epoch++
-      c.speaking = false
-      c.interrupted = true
-      adapter.stop(guildId)
-    }
+  }
+
+  /** Someone talks over the bot (the service calls this once it hears `barge_ms` of speech): it stops. */
+  function bargeIn({ guildId, channelId, userId }) {
+    const kbId = kbOfChannel(channelId)
+    const c = kbId ? calls.get(kbId) : null
+    if (!c?.speaking || !c.humans.has(userId)) return
+    silence(c, guildId)
+    c.interrupted = true
   }
 
   async function flush(kbId, userId) {
     const key = `${kbId}:${userId}`
-    const s = speech.get(key)
+    const s = pending.get(key)
     if (!s) return
-    speech.delete(key)
+    pending.delete(key)
     const text = (await Promise.all(s.parts)).filter(Boolean).join(' ').trim()
     const c = calls.get(kbId)
     if (!text || !c?.active) return
@@ -306,20 +333,25 @@ export function createCalls({
   /** The session speaks: synthesized chunk by chunk (the next one is prepared while one plays). */
   function play(c, guildId, text) {
     const epoch = c.epoch
-    const chunks = speechChunks(text)
+    const item = { chunks: speechChunks(text), i: 0 } // i: the chunk being said — a cut-off keeps the rest
+    const { chunks } = item
+    c.outbox.push(item)
     const run = async () => {
       if (c.epoch !== epoch) return
       c.speaking = true
       let next = voice(c.kb).speak(chunks[0])
-      for (let i = 0; i < chunks.length && c.epoch === epoch; i++) {
+      for (; item.i < chunks.length && c.epoch === epoch; item.i++) {
         let audio
         try { audio = await next } catch (e) { log(`[${c.kb}] speech failed: ${e.message}`); break }
-        next = i + 1 < chunks.length ? voice(c.kb).speak(chunks[i + 1]) : null
+        next = item.i + 1 < chunks.length ? voice(c.kb).speak(chunks[item.i + 1]) : null
         next?.catch(() => {})
         if (c.epoch !== epoch) break
         await adapter.play(guildId, audio)
       }
-      if (c.epoch === epoch) c.speaking = false
+      if (c.epoch === epoch) {
+        c.speaking = false
+        c.outbox.splice(c.outbox.indexOf(item), 1)
+      }
     }
     const queued = (queues.get(guildId) ?? Promise.resolve()).then(run, run)
     queues.set(guildId, queued)
@@ -374,7 +406,7 @@ export function createCalls({
     if (bot || before === after) return
     const left = before ? kbOfChannel(before) : null
     const joined = after ? kbOfChannel(after) : null
-    if (left) await humanLeft(left, guildId, userId, name)
+    if (left) await humanLeft(left, guildId, userId, name, { to: joined })
     if (joined) await humanJoined(joined, guildId, userId, name)
   }
 
@@ -396,7 +428,7 @@ export function createCalls({
     }
   }
 
-  return { voiceState, utterance, speakingStart, disconnected, tick, say, end, status, kbOfChannel, enabledKbs, _calls: calls }
+  return { voiceState, utterance, speakingStart, bargeIn, disconnected, tick, say, end, status, kbOfChannel, enabledKbs, config, _calls: calls }
 }
 
 // ------------------------------------------------------------------ control server (Call service side)

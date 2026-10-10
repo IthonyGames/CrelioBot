@@ -72,7 +72,7 @@ If a folder isn't structured as a knowledge base yet and the user has a KB-build
 
 ## 7. Voice (optional)
 
-Voice notes in and out use OpenAI (transcription + speech). The user adds `OPENAI_API_KEY=` to `workspace/.env`. Without it everything else works.
+Voice notes in and out use OpenAI (transcription + speech). The user adds `OPENAI_API_KEY=` to `workspace/.env`. Without it everything else works. The language people speak is detected; if the user always speaks one, set `voice.language` in `crelio.json` (e.g. `"fr"`) — short phrases come out more reliably.
 
 **Calls** (talking with a team in a voice channel) are optional and need extra libraries: Discord only accepts end-to-end encrypted voice. If the user wants them, run `node bin/crelio.mjs calls install`. After the first start, they ask a Manager in Discord to "turn on Calls", and it creates the KB's voice channel. Details: `docs/calls.md`.
 

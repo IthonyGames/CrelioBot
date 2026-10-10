@@ -300,14 +300,13 @@ export function createTools({
     const file = await fetchImpl(att.url)
     if (!file.ok) throw new ToolError(`could not download the audio (HTTP ${file.status})`)
     const audio = Buffer.from(await file.arrayBuffer())
-    const language = isRouter ? instance.language : (instance.kb(kbId).language ?? instance.language)
     // Discord's waveform (0-255 per point) tells a near-silent recording apart from a provider failure.
     const wave = att.waveform ? Buffer.from(att.waveform, 'base64') : null
     const quiet = wave?.length ? wave.reduce((s, x) => s + x, 0) / wave.length < 35 : false
     let text
     try {
       const names = [...instance.kbs.values()].map(k => k.name ?? k.id).concat('CrelioBot', ...agents().map(agentName))
-      text = await voice().transcribe(audio, { filename: att.filename, contentType: att.content_type ?? 'audio/ogg', language, prompt: [...new Set(names)].join(', ') })
+      text = await voice().transcribe(audio, { filename: att.filename, contentType: att.content_type ?? 'audio/ogg', prompt: [...new Set(names)].join(', ') })
     } catch (e) {
       if (quiet && /empty/.test(e.message)) throw new ToolError('the recording is almost silent — no speech detected; ask the person to record again (microphone muted or too far?)')
       throw e

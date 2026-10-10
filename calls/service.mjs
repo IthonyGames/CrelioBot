@@ -2,7 +2,8 @@
 // CrelioBot Call service — the voice side of Calls; the logic lives in src/calls.mjs. An optional
 // component with its own dependencies (ADR-0007): discord.js for the gateway, @discordjs/voice and
 // @snazzah/davey for the voice connection (Discord only accepts end-to-end encrypted voice — DAVE —
-// since March 2026). Installed with "crelio calls install"; the launcher then runs it in its own window.
+// since March 2026); opusscript and the WebRTC voice detector (WASM) to tell speech from noise.
+// Installed with "crelio calls install"; the launcher then runs it in its own window.
 //
 // One gateway connection per Manager bot that serves a KB with Calls on (usually the one shared Manager),
 // next to the connections the sessions' Discord plugins hold. It follows the Workspace: turning Calls on
@@ -16,7 +17,8 @@ import * as voice from '@discordjs/voice'
 import { liveInstance } from '../src/instance.mjs'
 import { discordClient } from '../src/discord.mjs'
 import { voiceProvider } from '../src/voice.mjs'
-import { CALL_DEFAULTS, createCalls, startControlServer } from '../src/calls.mjs'
+import { createCalls, startControlServer } from '../src/calls.mjs'
+import { FRAME, SAMPLE_RATE, speechDetector, VAD_DEFAULTS } from '../src/vad.mjs'
 
 const repoDir = process.env.CRELIO_HOME ?? resolve(import.meta.dirname, '..')
 const instance = liveInstance(process.env.CRELIO_WORKSPACE ?? join(repoDir, 'workspace'), { repoDir })
@@ -29,6 +31,48 @@ const log = msg => {
 }
 
 const bots = new Map() // token env name → { client, calls, kbs }
+
+// Speech detection: each packet is decoded to 16 kHz mono and checked by the WebRTC voice detector.
+// Without these two (an install from before they were added), every sound counts — as it used to.
+let OpusScript = null
+let fvad = null
+try {
+  OpusScript = (await import('opusscript')).default
+  fvad = await (await import('@echogarden/fvad-wasm')).default()
+} catch (e) {
+  log(`speech detection off (${e.message}) — run "crelio calls install" again`)
+}
+
+function webrtcDetector(mode) {
+  const handle = fvad._fvad_new()
+  fvad._fvad_set_sample_rate(handle, SAMPLE_RATE)
+  fvad._fvad_set_mode(handle, mode)
+  const ptr = fvad._malloc(FRAME * 2)
+  return {
+    test(frame) { fvad.HEAP16.set(frame, ptr >> 1); return fvad._fvad_process(handle, ptr, FRAME) === 1 },
+    free() { fvad._free(ptr); fvad._fvad_free(handle) },
+  }
+}
+
+/** One person's stream: decode as packets arrive; null when speech detection is off. */
+function listener(vadConfig) {
+  if (!OpusScript || !fvad) return null
+  const decoder = new OpusScript(SAMPLE_RATE, 1)
+  const webrtc = webrtcDetector(vadConfig.mode)
+  const detector = speechDetector({ ...vadConfig, webrtc: frame => webrtc.test(frame) })
+  return {
+    detector,
+    push(packet) {
+      let pcm = null
+      try {
+        const out = decoder.decode(packet)
+        pcm = new Int16Array(out.buffer.slice(out.byteOffset, out.byteOffset + out.length))
+      } catch {}
+      return detector.push(pcm)
+    },
+    close() { decoder.delete(); webrtc.free() },
+  }
+}
 
 /** Which Manager bot serves each KB with Calls on (a KB profile may give its team its own Manager). */
 function wantedBots() {
@@ -75,11 +119,32 @@ function startBot(tokenEnv, kbs) {
       entry.calls.speakingStart({ guildId, channelId, userId })
       if (conn.receiver.subscriptions.has(userId)) return
       const kbId = entry.calls.kbOfChannel(channelId)
-      const silence = { ...CALL_DEFAULTS, ...(kbId ? instance.kb(kbId).call : {}) }.silence_ms
-      const stream = conn.receiver.subscribe(userId, { end: { behavior: voice.EndBehaviorType.AfterSilence, duration: silence } })
+      if (!kbId) return
+      const cfg = entry.calls.config(kbId)
+      const stream = conn.receiver.subscribe(userId, { end: { behavior: voice.EndBehaviorType.AfterSilence, duration: cfg.silence_ms } })
+      const ear = listener({ ...VAD_DEFAULTS, ...cfg.vad })
+      // Without speech detection, any sound talks over the bot; with it, only real speech does.
+      if (!ear) entry.calls.bargeIn({ guildId, channelId, userId })
       const packets = []
-      stream.on('data', p => packets.push(p))
-      stream.on('end', () => entry.calls.utterance({ channelId, userId, name: memberName(guildId, userId), packets }))
+      let barged = !ear
+      stream.on('data', p => {
+        packets.push(p)
+        if (!ear) return
+        ear.push(p)
+        if (!barged && ear.detector.speechMs >= cfg.barge_ms) {
+          barged = true
+          entry.calls.bargeIn({ guildId, channelId, userId })
+        }
+      })
+      let finished = false
+      const finish = () => {
+        if (finished) return
+        finished = true
+        ear?.close()
+        entry.calls.utterance({ channelId, userId, name: memberName(guildId, userId), packets, speech: ear?.detector.flags })
+      }
+      stream.on('end', finish)
+      stream.on('close', finish)
       stream.on('error', e => log(`receive error (${userId}): ${e.message}`))
     })
   }

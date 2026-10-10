@@ -34,7 +34,7 @@ A new team starts with the Manager plus `kb-researcher web-researcher planner`; 
 
 ## 6. Optional
 
-- Voice: `OPENAI_API_KEY=…` in `workspace/.env`.
+- Voice: `OPENAI_API_KEY=…` in `workspace/.env`. Optional: `voice.language` in `crelio.json` (e.g. `"fr"`) when you always speak the same language; otherwise it is detected.
 - Calls (voice channels): `crelio calls install`, restart, then ask a Manager "turn on Calls". See [calls.md](calls.md).
 - Morning brief: in a KB profile, `"schedules": [{ "id": "morning-brief", "cron": "0 8 * * 1-5", "prompt": "Post the morning brief in the KB General: open Task threads, what is blocked, what waits on whom." }]`.
 

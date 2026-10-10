@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CALLS, loadInstance } from '../src/instance.mjs'
 import { createCalls, postToSession, speakable, speechChunks, startControlServer, writeInboxAddress } from '../src/calls.mjs'
+import { keepSpeech, levelDb, speechDetector, voicing } from '../src/vad.mjs'
+import { cleanTranscript, voiceProvider } from '../src/voice.mjs'
 import { isOggOpus, oggCrc, oggFromOpus, oggPages, oggVoiceInfo } from '../src/ogg.mjs'
 import { launchIds } from '../src/launcher.mjs'
 import { makeWorkspace, REPO, snowflake } from './helpers.mjs'
@@ -67,14 +69,14 @@ test('someone joining the KB voice channel starts a Call: the bot joins and the 
   assert.deepEqual(state.people, ['Anthony'])
 })
 
-test('what a person says is transcribed in the KB language, logged, shown in the call chat and sent to the session', async () => {
+test('what a person says is transcribed (in the language they speak, not forced to the KB\'s), logged, shown in the call chat and sent to the session', async () => {
   const w = world()
   await w.join('alpha')
   w.speak('alpha', 'Fais-moi le point sur Quillz')
   await sleep(60)
   const t = w.voiceCalls.transcribe[0]
   assert.equal(t.ogg, true)
-  assert.equal(t.language, 'fr')
+  assert.equal(t.language, undefined, 'the provider uses voice.language, or detects it')
   assert.match(t.prompt, /ALPHA.*CrelioBot.*KB Researcher/)
   assert.match(w.last(), /🎙️ \[Call\] Anthony \(user \d+, utterance (u1-\w+)\): « Fais-moi le point sur Quillz »/)
   const id = w.last().match(/utterance (u1-\w+)/)[1]
@@ -96,7 +98,7 @@ test('a pause mid-sentence does not cut the request in two; noise and too-short 
   await sleep(60)
   assert.equal(w.delivered.filter(d => d.text.includes('🎙️')).length, 1)
   assert.match(w.last(), /« Crée un tableau de mes dépenses du mois »/)
-  w.calls.utterance({ channelId: CALL.alpha, userId: ANTHONY, packets: speechPackets(10) }) // 200 ms
+  w.calls.utterance({ channelId: CALL.alpha, userId: ANTHONY, packets: speechPackets(9) }) // 180 ms
   w.speak('alpha', 'Sous-titres réalisés par la communauté d\'Amara.org')
   await sleep(60)
   assert.equal(w.delivered.filter(d => d.text.includes('🎙️')).length, 1, 'nothing new reached the session')
@@ -145,13 +147,15 @@ test('call_end: the bot leaves when the last person leaves — or at once with n
   assert.equal(w.adapter.leaves, 2)
 })
 
-test('talking over the bot stops its speech, and the session learns it was interrupted', async () => {
+test('talking over the bot stops its speech, and the session learns it was interrupted — a sound alone does not', async () => {
   const w = world()
   await w.join('alpha')
   w.adapter.gate = new Promise(r => { w.adapter.open = r })
   await w.calls.say('alpha', 'Une longue réponse. Avec plusieurs phrases. Qui ne finit pas.')
   await sleep(10)
   w.calls.speakingStart({ guildId: GUILD, channelId: CALL.alpha, userId: ANTHONY })
+  assert.equal(w.adapter.stops, 0, 'audio started — maybe only a breath')
+  w.calls.bargeIn({ guildId: GUILD, channelId: CALL.alpha, userId: ANTHONY })
   assert.equal(w.adapter.stops, 1)
   w.speak('alpha', 'Attends, plutôt Quillz Spark')
   await sleep(60)
@@ -167,6 +171,125 @@ test('one bot, two calls: a busy bot says so, and comes over once the other call
   await w.leave('alpha')
   assert.equal(w.adapter.channel, CALL.beta)
   assert.ok(w.delivered.some(d => d.kb === 'beta' && /Lauriane joined the voice channel/.test(d.text)))
+})
+
+test('only speech is transcribed: noise is dropped before speech-to-text, silence around speech is cut', async () => {
+  const w = world()
+  await w.join('alpha')
+  const flags = n => Array(n).fill(false)
+  w.texts.push('Sous-titres réalisés par la communauté d\'Amara.org')
+  w.calls.utterance({ channelId: CALL.alpha, userId: ANTHONY, packets: speechPackets(150), speech: flags(150) }) // 3 s of breathing
+  w.calls.utterance({ channelId: CALL.alpha, userId: ANTHONY, packets: speechPackets(50), speech: flags(48).concat(true, true) }) // 40 ms: a click
+  await sleep(60)
+  assert.equal(w.voiceCalls.transcribe.length, 0, 'nothing reached speech-to-text')
+  assert.equal(w.delivered.filter(d => d.text.includes('🎙️')).length, 0)
+
+  w.texts.splice(0)
+  const speech = flags(100).concat(Array(40).fill(true), flags(100)) // 2 s silence, 0.8 s speech, 2 s silence
+  w.texts.push('Oui, vas-y')
+  w.calls.utterance({ channelId: CALL.alpha, userId: ANTHONY, packets: speechPackets(240), speech })
+  await sleep(60)
+  assert.match(w.last(), /« Oui, vas-y »/)
+  assert.equal(w.voiceCalls.transcribe.length, 1)
+})
+
+test('words waiting for the end of a sentence still go out when the next sound is only noise', async () => {
+  const w = world()
+  await w.join('alpha')
+  w.speak('alpha', 'Lance les trois tickets')
+  w.calls.speakingStart({ guildId: GUILD, channelId: CALL.alpha, userId: ANTHONY })
+  await sleep(30)
+  w.calls.utterance({ channelId: CALL.alpha, userId: ANTHONY, packets: speechPackets(40), speech: Array(40).fill(false) })
+  await sleep(60)
+  assert.match(w.last(), /« Lance les trois tickets »/)
+})
+
+test('moving to another KB\'s call: the bot follows, each Call keeps its own KB, and the first gives its update on return', async () => {
+  const w = world()
+  const move = (from, to) => w.calls.voiceState({ guildId: GUILD, userId: ANTHONY, name: 'Anthony', bot: false, before: CALL[from], after: CALL[to] })
+  await w.join('alpha')
+  w.adapter.gate = new Promise(r => { w.adapter.open = r })
+  await w.calls.say('alpha', 'Je lance les tickets. Ensuite je fais la revue.')
+  await sleep(10)
+  await move('alpha', 'beta')
+  w.adapter.open()
+  w.adapter.gate = null
+  assert.equal(w.adapter.channel, CALL.beta, 'the bot followed')
+  const alphaTold = w.delivered.filter(d => d.kb === 'alpha').at(-1).text
+  assert.match(alphaTold, /Anthony went to the BETA call — the bot follows them there.*This Call stays open\. You were cut off mid-reply; the rest is kept\. Keep working/)
+  assert.ok(w.delivered.some(d => d.kb === 'beta' && /Anthony joined the voice channel/.test(d.text)), 'a Call starts in beta')
+
+  w.speak('beta', 'Parlons de Spark')
+  await sleep(60)
+  assert.equal(w.delivered.filter(d => d.text.includes('Parlons de Spark')).map(d => d.kb).join(), 'beta', 'what is said in beta reaches beta only')
+  const held = await w.calls.say('alpha', 'Les tickets sont faits.')
+  assert.equal(held.spoken, false, 'alpha has nobody to talk to: kept')
+
+  await move('beta', 'alpha')
+  assert.equal(w.adapter.channel, CALL.alpha)
+  assert.match(w.delivered.filter(d => d.kb === 'beta').at(-1).text, /went to the ALPHA call/)
+  assert.match(w.delivered.filter(d => d.kb === 'alpha').at(-1).text, /Anthony is back in the call.*« Je lance les tickets\. Ensuite je fais la revue\. » « Les tickets sont faits\. »/)
+})
+
+test('speech detection: a voice is speech; silence, noise and a too-quiet voice are not; padding and long pauses', () => {
+  const sr = 16000
+  const vowel = Int16Array.from({ length: sr }, (_, i) => { // 140 Hz with harmonics, like a vowel
+    const t = i / sr
+    return 6000 * (Math.sin(2 * Math.PI * 140 * t) + 0.6 * Math.sin(2 * Math.PI * 280 * t) + 0.3 * Math.sin(2 * Math.PI * 420 * t))
+  })
+  let seed = 7
+  const noise = Int16Array.from({ length: sr }, () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32 - 0.5) * 8000)
+  const frames = x => Array.from({ length: x.length / 320 }, (_, i) => x.subarray(i * 320, (i + 1) * 320))
+  assert.ok(voicing(vowel.subarray(0, 640)) > 0.9)
+  assert.ok(voicing(noise.subarray(0, 640)) < 0.3)
+  assert.ok(levelDb(new Int16Array(320)) < -100)
+  const run = x => { const d = speechDetector(); for (const f of frames(x)) d.push(f); return d }
+  assert.ok(run(vowel).speechMs >= 900, 'a voice is speech')
+  assert.equal(run(noise).speechMs, 0, 'noise is not')
+  assert.equal(run(new Int16Array(sr)).speechMs, 0, 'silence is not')
+  assert.equal(run(vowel.map(v => v / 1000)).speechMs, 0, 'too quiet to be someone talking to the team')
+  const d = speechDetector()
+  d.push(null)
+  assert.deepEqual(d.flags, [false], 'an undecodable packet is not speech')
+
+  const f = (...runs) => runs.flatMap(([n, v]) => Array(n).fill(v))
+  assert.deepEqual(keepSpeech(f([5, false]), {}), { speech_ms: 0, keep: [] })
+  const k = keepSpeech(f([50, false], [10, true], [100, false], [10, true], [50, false]), { pad_ms: 200, max_gap_ms: 800 })
+  assert.equal(k.speech_ms, 400)
+  assert.equal(k.keep[0], 40, '200 ms before the speech')
+  assert.equal(k.keep.at(-1), 179, '200 ms after it')
+  assert.equal(k.keep.length, 10 + 10 + 10 + 10 + 10 + 10, 'the 2 s pause inside is cut to its edges')
+  assert.equal(keepSpeech(f([10, true], [30, false], [10, true]), { pad_ms: 200, max_gap_ms: 800 }).keep.length, 50, 'a short pause stays whole')
+})
+
+test('what speech-to-text invents is removed: subtitle credits, bare links, lone thank-yous', () => {
+  for (const invented of ['❤️ par SousTitreur.com', 'https://www.kenhub.com', 'http://TheBusinessProfessor.com', 'Subs by www.zeoranger.co.uk', 'Thank you. Thank you. Thank you.', 'So.', 'Sous-titres réalisés par la communauté d\'Amara.org', 'Merci.']) {
+    assert.equal(cleanTranscript(invented), '', invented)
+  }
+  assert.equal(cleanTranscript('❤️ par SousTitreur.com Oui, bien, en fait, peux-tu me dire les trois prochains?'), 'Oui, bien, en fait, peux-tu me dire les trois prochains?')
+  assert.equal(cleanTranscript('Va voir quillz.com pour la démo'), 'Va voir quillz.com pour la démo', 'a domain inside a sentence stays')
+  assert.equal(cleanTranscript('Merci, lance les tickets.'), 'Merci, lance les tickets.')
+})
+
+test('transcription: segments the model marks as silence are dropped; the language is what people speak, if set', async () => {
+  const sent = []
+  const fetchImpl = async (url, init) => {
+    sent.push(Object.fromEntries([...init.body.entries()].filter(([k]) => k !== 'file')))
+    return new Response(JSON.stringify({
+      text: 'Lance les tickets. Thank you for watching! Bla',
+      segments: [
+        { text: ' Lance les tickets.', no_speech_prob: 0.02, avg_logprob: -0.2 },
+        { text: ' Thank you for watching!', no_speech_prob: 0.9, avg_logprob: -0.3 },
+        { text: ' Bla', no_speech_prob: 0.7, avg_logprob: -1.4 },
+      ],
+    }), { status: 200 })
+  }
+  const inst = lang => ({ settings: { voice: lang ? { language: lang } : {} }, secret: () => 'sk-test' })
+  assert.equal(await voiceProvider(inst(), { fetchImpl }).transcribe(Buffer.from('x')), 'Lance les tickets.')
+  await voiceProvider(inst('fr'), { fetchImpl }).transcribe(Buffer.from('x'))
+  assert.equal(sent[0].response_format, 'verbose_json')
+  assert.equal(sent[0].language, undefined, 'detected by default')
+  assert.equal(sent[1].language, 'fr')
 })
 
 test('an empty Call nobody returns to ends after idle_minutes', async () => {

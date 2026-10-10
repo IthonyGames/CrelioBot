@@ -12,7 +12,7 @@ CrelioBot turns a Discord server into the workspace of Claude Code agent teams, 
 - `src/launcher.mjs` — windows, restart loop, stop.
 - `src/tools.mjs` + `mcp/server.mjs` — the team's MCP tools (zero-dependency JSON-RPC over stdio).
 - `src/discord.mjs`, `src/provision.mjs`, `src/bots.mjs` (bot registration), `src/voice.mjs`, `src/ogg.mjs`, `src/registry.mjs`, `src/context.mjs`.
-- `src/calls.mjs` — Calls logic (dependency-free); `calls/` — the optional Call service, the only code with npm dependencies (ADR-0007).
+- `src/calls.mjs` — Calls logic and `src/vad.mjs` — speech detection (both dependency-free); `calls/` — the optional Call service, the only code with npm dependencies (ADR-0007).
 - `hooks/` — guard hooks for the guarded permission level (referenced by generated settings).
 - `plugin/` — the Claude Code plugin: agents, skills, SessionStart hook.
 - `templates/workspace/` — what setup copies into `workspace/` (git-ignored, ADR-0004).

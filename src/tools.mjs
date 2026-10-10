@@ -342,8 +342,8 @@ export function createTools({
 
   /**
    * One notification per routed request: the copy in the KB General is silent and names the author without
-   * mentioning them, the request gets a ✅ instead of a confirmation message, and the KB's Task thread is where
-   * the author is pinged. The request's attachments travel with it (the KB session can't read the Global General).
+   * mentioning them, nothing is posted or added in the Global General, and the KB's Task thread is where the
+   * author is pinged. The request's attachments travel with it (the KB session can't read the Global General).
    */
   async function route({ kb, text, author_id, author_name, source_message_id }) {
     routerOnly('route')
@@ -373,13 +373,6 @@ export function createTools({
       flags: FLAGS.SUPPRESS_EMBEDS | FLAGS.SUPPRESS_NOTIFICATIONS,
       allowedMentions: { parse: [] },
     })
-    let reacted = false
-    if (sourceId) {
-      try {
-        await manager().put(`/channels/${instance.globalGeneralId}/messages/${sourceId}/reactions/${encodeURIComponent('✅')}/@me`)
-        reacted = true
-      } catch {}
-    }
     return {
       kb: profile.id,
       chat_id: general,
@@ -388,7 +381,7 @@ export function createTools({
       link: link(general, ids[0]),
       attachments: attachments.map(f => f.name),
       ...(skipped.length ? { attachments_not_copied: skipped } : {}),
-      request_marked: reacted ? '✅ added to the request — post nothing more in the Global General' : 'could not react to the request',
+      note: 'post nothing in the Global General: the Task thread in the KB pings the author',
     }
   }
 

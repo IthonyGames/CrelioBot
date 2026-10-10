@@ -44,7 +44,7 @@ const TOOLS = [
   },
   {
     name: 'react',
-    description: 'Add an emoji reaction as an agent — the quiet way to say "seen" (👀), "done" (✅) or "ok" (👍) without a message. agent defaults to "manager".',
+    description: 'Add an emoji reaction as an agent, when a person asks for one. Never to acknowledge people\'s messages (no 👀/✅ receipts): owners find them noisy. agent defaults to "manager".',
     inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, message_id: { type: 'string' }, emoji: { type: 'string' } }, required: ['chat_id', 'message_id', 'emoji'] },
   },
   {
@@ -179,8 +179,8 @@ const TOOLS = [
   },
   {
     name: 'route',
-    description: 'Router: post a request from the Global General into a KB\'s General (as that KB\'s Manager bot, silently, naming the author without pinging them, linking the original and copying its attachments), and mark the request with ✅. ' +
-      'That ✅ is your whole confirmation: post nothing else in the Global General — the KB\'s Task thread is where the author gets pinged. Returns chat_id/message_id of the posted copy and the KB session name — then SendMessage that session so it handles it.',
+    description: 'Router: post a request from the Global General into a KB\'s General (as that KB\'s Manager bot, silently, naming the author without pinging them, linking the original and copying its attachments). ' +
+      'Post nothing in the Global General and add no reaction — the KB\'s Task thread is where the author gets pinged. Returns chat_id/message_id of the posted copy and the KB session name — then SendMessage that session so it handles it.',
     routerOnly: true,
     inputSchema: {
       type: 'object',

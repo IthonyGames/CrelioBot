@@ -13,6 +13,7 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsF
     files: new Map(), // attachment id → bytes, served at /files/:id
     roles: [{ id: guildId, name: '@everyone' }],
     notInGuild: new Set(), // bot user ids that were never invited
+    avatars: new Map(), // bot user id → the avatar data URI it was given
   }
   const userFor = token => bots[token] ?? { id: '1', username: 'unknown-bot', bot: true }
 
@@ -72,7 +73,11 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsF
       return reply(429, { message: 'You are being rate limited.', retry_after: 0.05, global: false })
     }
     let m
-    if (key === 'GET /users/@me') return reply(200, userFor(token))
+    if (key === 'GET /users/@me') return reply(200, { avatar: null, ...userFor(token) })
+    if (key === 'PATCH /users/@me') {
+      state.avatars.set(userFor(token).id, json.avatar)
+      return reply(200, { ...userFor(token), avatar: 'f00d' })
+    }
     if (key === 'GET /applications/@me') return reply(200, { id: userFor(token).id, flags: 1 << 19 })
     if ((m = path.match(/^\/guilds\/(\d+)\/members\/@me$/)) && req.method === 'PATCH') {
       if (state.notInGuild.has(userFor(token).id)) return reply(404, { message: 'Unknown Guild', code: 10004 })

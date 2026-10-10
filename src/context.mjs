@@ -28,7 +28,7 @@ export async function sessionContext({ instance, sessionId, tools }) {
     const kb = team.kb
     out.push(
       `# CrelioBot — ${kb.name} team (KB \`${kb.id}\`)`,
-      `You are the Manager of this team. Language for everything posted: **${team.language}**. Hop budget per Task: ${team.hop_budget}. Owner: <@${team.owner_id}>. KB folder: ${kb.path}`,
+      `You are the Manager of this team. Write to people in the language they use with you; when nobody has written yet, in **${team.language}**. Hop budget per Task: ${team.hop_budget}. Owner: <@${team.owner_id}>. KB folder: ${kb.path}`,
       `Task system adapter: \`${kb.tasks?.adapter ?? 'none'}\`${kb.tasks?.notes ? ` — ${kb.tasks.notes}` : ''}`,
       '', '## Channels and team (agent — bot — role — channel)',
       `- KB General: ${team.kb_general_id}`,

@@ -54,7 +54,7 @@ test('a KB session starts knowing its team, Schedules, open threads and Team lea
   await fake.close()
   assert.equal(code, 0)
   assert.match(out, /# CrelioBot — ALPHA team/)
-  assert.match(out, /Language for everything posted: \*\*fr\*\*/)
+  assert.match(out, /Write to people in the language they use with you; when nobody has written yet, in \*\*fr\*\*/)
   assert.match(out, /Coder \(`coder`\)/)
   assert.match(out, /morning-brief.*0 8 \* \* 1-5/)
   assert.match(out, /«Pricing page — anthony» — chat_id \d+/)

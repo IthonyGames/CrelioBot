@@ -30,7 +30,7 @@ No process of ours holds the Discord gateway: each session's official plugin doe
 4. Escalation: a Specialist posts numbered questions tagging the person, returns `needs-input` with the message id; the Manager records `waiting_on`. The person replies under the question → the plugin delivers it → `whereami` shows `replied_to.agent` → the Manager continues that subagent (`SendMessage`) with the answer.
 5. Summary, ticket update, learnings, `thread_close`.
 
-Notifications: a Task pings its Requester when it starts (the thread opener), for each question that needs them, and when it is done (the summary). Everything else is short and quiet — `post` never pings the author of a message it replies to, only the people its text mentions, and flags posts over 900 characters back to the agent; the details travel between agents in their briefs (the final answer each returns).
+Notifications: a Task pings its Requester when it starts (the thread opener), for each question that needs them, and when it is done (the summary). Everything else is short and quiet, and written like text messages rather than reports (team protocol §2) — `post` never pings the author of a message it replies to, only the people its text mentions, and flags posts over 900 characters back to the agent; the details travel between agents in their briefs (the final answer each returns).
 
 Agents never talk to each other *through* Discord (the official plugin drops bot messages, ADR-0002): they call each other inside the session and *show* the conversation in Discord.
 

@@ -46,7 +46,7 @@ export function accessFor(instance, id) {
     allowFrom: [],
     groups: Object.fromEntries(instance.channelsOf(id).map(c => [c, { requireMention: false, allowFrom: [] }])),
     pending: {},
-    ackReaction: instance.settings.ack_reaction ?? '👀',
+    ackReaction: instance.settings.ack_reaction ?? '', // no receipt reaction on people's messages unless asked for
     replyToMode: 'off',
     chunkMode: 'newline',
   }

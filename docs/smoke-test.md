@@ -44,6 +44,8 @@ Run on a throwaway Discord server before each release (or after changing the run
 - [ ] Ask something → transcript in the voice chat (🎙️), a spoken answer (🔊), a Task thread for real work
 - [ ] Talk over the bot → it stops speaking
 - [ ] Leave while it works, come back → a short spoken update of where things stand
+- [ ] Switch to another KB's call → the bot comes along and that KB answers; switch back → the bot comes back and says at once what the first KB kept for you
+- [ ] Stay silent a minute → nothing appears in the voice chat
 - [ ] "C'est tout pour ce soir", then leave → the bot leaves too
 
 ## Restart memory

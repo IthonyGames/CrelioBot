@@ -116,7 +116,7 @@ export function provisioner({ client, guildId, log = () => {} }) {
     return { channel_id: ch.id, role_id: role.id, created: ch.created || role.created }
   }
 
-  return { ensureChannel, ensureRole, agentsCategory, agentChannelAndRole }
+  return { allChannels, ensureChannel, ensureRole, agentsCategory, agentChannelAndRole }
 }
 
 /** Global General (Router): a channel at the top of the server, outside any category. */
@@ -138,7 +138,9 @@ export async function provisionKb({ instance, client, kbId, log, agents: withAge
   const p = provisioner({ client, guildId: instance.guildId, log })
   const names = layoutNames(instance)
   const kbName = kb.name ?? kb.id
-  const cat = await p.ensureChannel({ id: d.category_id, name: names.kbCategory(kb), type: 4 })
+  // The KB's category is the one its General is in: people move it into a category of their own.
+  const generalParent = (await p.allChannels()).find(c => c.id === d.general_id)?.parent_id
+  const cat = await p.ensureChannel({ id: generalParent ?? d.category_id, name: names.kbCategory(kb), type: 4 })
   const general = await p.ensureChannel({ id: d.general_id, name: names.general, parent_id: cat.id, topic: TOPICS.general })
   const agents = { ...d.agents }
   const rolesMap = { ...d.roles }

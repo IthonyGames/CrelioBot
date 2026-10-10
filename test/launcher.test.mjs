@@ -52,3 +52,21 @@ test('Windows command lines quote arguments with spaces for cmd.exe', () => {
     '"C:\\Program Files\\claude.cmd" --name crelio-alpha --settings "C:\\My Files\\s.json" "say ""hi"""',
   )
 })
+
+test('each start is a fresh run-once process: it writes the session files with the code on disk, runs claude and returns its exit code', async () => {
+  const { spawnSync } = await import('node:child_process')
+  const { existsSync, readFileSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { makeWorkspace, REPO } = await import('./helpers.mjs')
+  const { ws } = makeWorkspace()
+  const fake = join(ws, process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.sh')
+  writeFileSync(fake, process.platform === 'win32' ? '@exit /b 7\r\n' : '#!/bin/sh\nexit 7\n', { mode: 0o755 })
+  const settings = JSON.parse(readFileSync(join(ws, 'crelio.json'), 'utf8'))
+  writeFileSync(join(ws, 'crelio.json'), JSON.stringify({ ...settings, claude_path: fake }))
+  const run = spawnSync(process.execPath, [join(REPO, 'bin', 'crelio.mjs'), 'run-once', 'alpha', '--workspace', ws], { encoding: 'utf8' })
+  assert.equal(run.status, 7, run.stderr)
+  const access = JSON.parse(readFileSync(join(ws, 'state', 'alpha', 'discord', 'access.json'), 'utf8'))
+  assert.equal(access.ackReaction, '')
+  assert.ok(existsSync(join(ws, 'state', 'alpha', 'claude.pid')))
+  assert.match(readFileSync(join(ws, 'state', 'alpha', 'session.log'), 'utf8'), /starting ALPHA/)
+})

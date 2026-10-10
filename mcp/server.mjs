@@ -44,7 +44,7 @@ const TOOLS = [
   },
   {
     name: 'react',
-    description: 'Add an emoji reaction as an agent, when a person asks for one. Never to acknowledge people\'s messages (no 👀/✅ receipts): owners find them noisy. agent defaults to "manager".',
+    description: 'Add an emoji reaction as an agent, to another agent\'s message. Never on a person\'s message — the tool refuses: owners find reactions on their messages noisy (no 👀/✅/👍). agent defaults to "manager".',
     inputSchema: { type: 'object', properties: { agent: agentProp, chat_id: chatProp, message_id: { type: 'string' }, emoji: { type: 'string' } }, required: ['chat_id', 'message_id', 'emoji'] },
   },
   {

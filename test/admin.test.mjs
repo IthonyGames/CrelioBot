@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadInstance } from '../src/instance.mjs'
 import { discordClient } from '../src/discord.mjs'
-import { provisionGlobal, provisionKb } from '../src/provision.mjs'
+import { provisionGlobal, provisionKb, styled } from '../src/provision.mjs'
 import { makeWorkspace, REPO } from './helpers.mjs'
 import { startFakeDiscord } from './fake-discord.mjs'
 import { startMcp } from './mcp-client.mjs'
@@ -197,4 +197,38 @@ test('provisioning a fresh server creates the layout once and records every ID',
   assert.equal(reloaded.globalGeneralId, g1.channel_id)
   assert.equal(reloaded.kb('alpha').discord.general_id, k1.general_id)
   assert.equal(fake.state.channels.get(k1.general_id).parent_id, k1.category_id)
+})
+
+test('the default layout: CrelioBot on top, each KB in bold italic capitals with 💭Message, its agents in their own category after every KB, roles in the agents\' colors', async () => {
+  const { ws } = makeWorkspace({ kbs: ['alpha', 'beta'], settings: { global_general: {} }, profiles: { alpha: { name: 'La Ferme', discord: {} }, beta: { name: 'Quillz', discord: {} } } })
+  const fake = await startFakeDiscord({ guildId: loadInstance(ws, { repoDir: REPO }).guildId, channels: [], bots: {} })
+  const client = discordClient('token-DISCORD_TOKEN_MANAGER', { api: fake.api })
+  const g = await provisionGlobal({ instance: loadInstance(ws, { repoDir: REPO }), client })
+  for (const kbId of ['alpha', 'beta']) await provisionKb({ instance: loadInstance(ws, { repoDir: REPO }), client, kbId, agents: false })
+  const k = {}
+  for (const kbId of ['alpha', 'beta']) k[kbId] = await provisionKb({ instance: loadInstance(ws, { repoDir: REPO }), client, kbId })
+  await fake.close()
+  const ch = id => fake.state.channels.get(id)
+  assert.deepEqual([ch(g.channel_id).name, ch(g.channel_id).parent_id], ['𝐂𝐫𝐞𝐥𝐢𝐨𝐁𝐨𝐭', null])
+  assert.equal(ch(k.alpha.category_id).name, '𝙇𝘼 𝙁𝙀𝙍𝙈𝙀')
+  assert.deepEqual([ch(k.alpha.general_id).name, ch(k.alpha.general_id).parent_id], ['💭𝘔𝘦𝘴𝘴𝘢𝘨𝘦', k.alpha.category_id])
+  assert.equal(ch(k.alpha.agents_category_id).name, 'La Ferme agents')
+  assert.equal(ch(k.alpha.agents.planner).parent_id, k.alpha.agents_category_id)
+  const categories = [...fake.state.channels.values()].filter(c => c.type === 4).map(c => c.name)
+  assert.deepEqual(categories, ['𝙇𝘼 𝙁𝙀𝙍𝙈𝙀', '𝙌𝙐𝙄𝙇𝙇𝙕', 'La Ferme agents', 'Quillz agents'], 'every KB first, then the agents')
+  const role = id => fake.state.roles.find(r => r.id === id)
+  assert.equal(role(k.alpha.roles.manager).color, 0x2563EB)
+  assert.equal(role(k.beta.roles.planner).color, 0xEA580C)
+  assert.equal(loadInstance(ws, { repoDir: REPO }).kb('beta').discord.agents_category_id, k.beta.agents_category_id)
+  assert.equal(styled('Santé 2', 'bold-italic'), '𝙎𝙖𝙣𝙩𝙚́ 𝟮', 'accents kept, digits too')
+})
+
+test('"discord_fonts": false keeps plain letters', async () => {
+  const { ws } = makeWorkspace({ kbs: ['alpha'], settings: { global_general: {}, discord_fonts: false }, profiles: { alpha: { name: 'Quillz', discord: {} } } })
+  const fake = await startFakeDiscord({ guildId: loadInstance(ws, { repoDir: REPO }).guildId, channels: [], bots: {} })
+  const client = discordClient('token-DISCORD_TOKEN_MANAGER', { api: fake.api })
+  const g = await provisionGlobal({ instance: loadInstance(ws, { repoDir: REPO }), client })
+  const k = await provisionKb({ instance: loadInstance(ws, { repoDir: REPO }), client, kbId: 'alpha' })
+  await fake.close()
+  assert.deepEqual([g.channel_id, k.category_id, k.general_id].map(id => fake.state.channels.get(id).name), ['CrelioBot', 'QUILLZ', '💭Message'])
 })

@@ -31,7 +31,10 @@ export default async function discord({ workspace, repoDir, sub, rest, opts }) {
       console.log(`✔ Global General ${g.channel_id}${g.created ? ' (created)' : ''}`)
     }
     instance = loadInstance(workspace, { repoDir })
-    for (const kbId of opts.kb ? [opts.kb] : [...instance.kbs.keys()]) {
+    const kbIds = opts.kb ? [opts.kb] : [...instance.kbs.keys()]
+    // Every KB's category first, then their Agents' categories: new categories go to the bottom.
+    for (const kbId of kbIds) await provisionKb({ instance: loadInstance(workspace, { repoDir }), client, kbId, log, agents: false })
+    for (const kbId of kbIds) {
       const k = await provisionKb({ instance: loadInstance(workspace, { repoDir }), client, kbId, log })
       console.log(`✔ ${kbId}: category ${k.category_id}, General ${k.general_id}, ${Object.keys(k.agents).length} Agent channels${k.created ? ' (created)' : ''}`)
     }

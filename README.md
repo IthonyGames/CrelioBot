@@ -10,14 +10,17 @@ It's the "personal agent team" idea behind Meta Muse, xAI Grok Bot or OpenAI Dot
 
 ```
 Discord server
-├─ CrelioBot › #general          ← Router: "send this to the right team", "what's open everywhere?"
-├─ Quillz                        ← one category per knowledge base, one Claude Code session behind it
-│  ├─ #general                   ← requests; one thread per task
+├─ # 𝐂𝐫𝐞𝐥𝐢𝐨𝐁𝐨𝐭                    ← Router: "send this to the right team", "what's open everywhere?"
+├─ 𝙌𝙐𝙄𝙇𝙇𝙕                        ← one category per knowledge base, one Claude Code session behind it
+│  ├─ # 💭𝘔𝘦𝘴𝘴𝘢𝘨𝘦                ← requests; one thread per task
 │  │   └─ 🧵 Landing page redesign — Anthony
 │  │       Manager · KB Researcher · Web Researcher · Brainstormer · Artist · UX Expert · Planner · Coder …
-│  ├─ #kb-researcher  #web-researcher  #brainstormer  #artist  #ux-expert
-│  └─ #marketing  #lawyer  #planner  #coder  #<your own agents>
-└─ My Life
+│  └─ 🔈𝘊𝘢𝘭𝘭                     ← talk with the team (optional)
+├─ 𝙈𝙔 𝙇𝙄𝙁𝙀
+│  └─ …
+├─ Quillz agents                 ← each agent's own channel, for working with it directly
+│  └─ #kb-researcher  #web-researcher  #planner  #<the agents you turn on>
+└─ My Life agents
    └─ …
 ```
 
@@ -66,7 +69,7 @@ cd CrelioBot
 
 1. **Setup:** double-click `setup.bat` (or run `./setup.sh`). A Claude Code session guides you through the bots, the server, your knowledge bases and the Discord layout, and checks everything with `crelio doctor`.
 2. **Start:** double-click `start-crelio.bat` (or run `./start.sh`). One window opens per session.
-3. **Use it:** write a request in a KB's `#general`.
+3. **Use it:** write a request in a KB's `💭Message` channel (its KB General).
 4. **Stop:** `stop-crelio.bat` (or `./stop.sh`).
 
 To set up by hand instead, follow [docs/setup.md](docs/setup.md).

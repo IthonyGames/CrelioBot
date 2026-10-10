@@ -53,7 +53,7 @@ export default async function kb({ workspace, repoDir, sub, rest, opts }) {
     permission,
     pull_on_start: false,
     tasks: found.tasks,
-    discord: { category_id: '', general_id: '', agents: {}, roles: {} },
+    discord: { category_id: '', general_id: '', agents_category_id: '', agents: {}, roles: {} },
     agents: { enabled: [...DEFAULT_TEAM], custom: [] }, // the other Core agents are enabled from Discord when needed
     allow: { tools: [] },
     schedules: [],

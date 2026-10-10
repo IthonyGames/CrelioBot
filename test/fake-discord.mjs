@@ -151,7 +151,7 @@ export async function startFakeDiscord({ guildId, channels = [], bots = {}, ttsF
     if ((m = path.match(/^\/guilds\/(\d+)\/roles$/))) {
       if (req.method === 'GET') return reply(200, state.roles)
       if (req.method === 'POST') {
-        const role = { id: newId(), name: json.name, mentionable: json.mentionable, permissions: json.permissions }
+        const role = { id: newId(), name: json.name, mentionable: json.mentionable, permissions: json.permissions, color: json.color ?? 0 }
         state.roles.push(role)
         return reply(200, role)
       }

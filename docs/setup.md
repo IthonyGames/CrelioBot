@@ -30,7 +30,7 @@ A new team starts with the Manager plus `kb-researcher web-researcher planner`; 
 
 ## 5. Discord layout
 
-`crelio discord provision` — Global General, one category per KB, its #general and Agent channels, one role per agent. Safe to re-run.
+`crelio discord provision` — the Global General (`𝐂𝐫𝐞𝐥𝐢𝐨𝐁𝐨𝐭`, on top), one category per KB (`𝙌𝙐𝙄𝙇𝙇𝙕`) with its KB General (`💭𝘔𝘦𝘴𝘴𝘢𝘨𝘦`), then a `<KB> agents` category per KB with its Agent channels, and one role per agent in the agent's color. Safe to re-run: it never renames or moves what exists, so restyle your server freely. `"discord_fonts": false` in `crelio.json` keeps plain letters.
 
 ## 6. Optional
 

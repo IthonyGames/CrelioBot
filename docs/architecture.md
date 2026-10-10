@@ -24,7 +24,7 @@ No process of ours holds the Discord gateway: each session's official plugin doe
 
 ## A Task, end to end
 
-1. A person writes in a KB's `#general`. The plugin (Manager bot) pushes a `<channel>` event into that KB's session. It adds no receipt reaction: `ack_reaction` in `crelio.json` turns one on (e.g. `"👀"`).
+1. A person writes in a KB's General (`💭𝘔𝘦𝘴𝘴𝘢𝘨𝘦`). The plugin (Manager bot) pushes a `<channel>` event into that KB's session. It adds no receipt reaction: `ack_reaction` in `crelio.json` turns one on (e.g. `"👀"`).
 2. The Manager (main thread) routes it (`whereami` when unclear), then `thread_list` → reuse a Task thread or `thread_open` on the message. Task system sync per the `task-system` skill; `thread_meta` stores task id, Requester, Hops.
 3. The Manager dispatches Specialists as background subagents, KB Researcher first, then the research wave in parallel. Each posts in the thread **with its own bot** (`post(agent: …)`), may call another Specialist directly, and returns a `STATUS:` block.
 4. Escalation: a Specialist posts numbered questions tagging the person, returns `needs-input` with the message id; the Manager records `waiting_on`. The person replies under the question → the plugin delivers it → `whereami` shows `replied_to.agent` → the Manager continues that subagent (`SendMessage`) with the answer.

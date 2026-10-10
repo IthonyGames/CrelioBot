@@ -68,7 +68,7 @@ If a folder isn't structured as a knowledge base yet and the user has a KB-build
 
 ## 6. Discord layout
 
-`node bin/crelio.mjs discord provision` — creates the **CrelioBot › #general** (Global General), one category per KB with **#general** and one channel per enabled Specialist, and a mentionable role per agent. Re-running it is safe.
+`node bin/crelio.mjs discord provision` — creates the Global General (**𝐂𝐫𝐞𝐥𝐢𝐨𝐁𝐨𝐭**, at the top), one category per KB (its name in bold italic capitals) with its KB General **💭𝘔𝘦𝘴𝘴𝘢𝘨𝘦**, then a **<KB> agents** category per KB with one channel per enabled Specialist, and a mentionable role per agent in its color. Re-running it is safe and never renames what the user restyled. If the user prefers plain letters (screen readers spell the fancy ones out), set `"discord_fonts": false` in `crelio.json` first.
 
 ## 7. Voice (optional)
 
@@ -84,6 +84,6 @@ Offer a morning brief per KB (open threads, blocked tasks, what waits on them). 
 
 1. `node bin/crelio.mjs doctor` → until no ✖.
 2. Start: double-click **start-crelio.bat** (Windows) or `./start.sh` (macOS/Linux). One window per session opens (Router + each KB); they restart by themselves. **stop-crelio.bat** stops everything.
-3. First test with the user: write "hello" in a KB's #general → the Manager answers; then a real request → a Task thread opens and the team starts.
+3. First test with the user: write "hello" in a KB's 💭Message channel → the Manager answers; then a real request → a Task thread opens and the team starts.
 
 Finish with a short recap: what was set up, where the config lives (`workspace/`), how to add a KB (`crelio kb add` + `discord provision` + restart), and that the team is changed from Discord by the owner: "turn on the Lawyer", "remove the Coder", "create an agent for …", "create a #dashboard channel" — live, no restart.

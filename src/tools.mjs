@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statS
 import { basename, dirname, join } from 'node:path'
 import { agentName, loadInstance, ROUTER, updateKbProfile, updateSettings, CORE_AGENTS } from './instance.mjs'
 import { isSessionProcess, killSessionProcess } from './launcher.mjs'
-import { channelName, provisioner } from './provision.mjs'
+import { channelName, layoutNames, provisioner } from './provision.mjs'
 import { writeAccess } from './runtime.mjs'
 import { PORTAL_STEPS, registerBot, tokenEnvFor } from './bots.mjs'
 import { callService, serviceFile } from './calls.mjs'
@@ -560,15 +560,17 @@ export function createTools({
   /** Enabled Specialists of a KB as an explicit list (migrates an older "disabled" profile). */
   const enabledList = (inst, id) => inst.agentsFor(id).filter(a => a !== 'manager')
 
-  /** Creates (or finds) an agent's channel and role in a KB category and records them. */
+  /** Creates (or finds) an agent's channel — in the KB's Agents category — and role, and records them. */
   async function agentChannel(id, agent) {
-    const kb = fresh().kb(id)
+    const inst = fresh()
+    const kb = inst.kb(id)
     const d = kb.discord ?? {}
     if (!d.category_id) return { error: 'no Discord category yet — the owner runs "crelio discord provision"' }
     const p = provisioner({ client: kbManager(id), guildId: instance.guildId })
-    const r = await p.agentChannelAndRole({ kbName: kb.name ?? kb.id, categoryId: d.category_id, agent, channelId: d.agents?.[agent], roleId: d.roles?.[agent] })
+    const cat = await p.agentsCategory({ kb, names: layoutNames(inst) })
+    const r = await p.agentChannelAndRole({ kbName: kb.name ?? kb.id, categoryId: cat.id, agent, channelId: d.agents?.[agent], roleId: d.roles?.[agent] })
     updateKbProfile(instance.workspaceDir, id, k => {
-      k.discord = { ...k.discord, agents: { ...k.discord?.agents, [agent]: r.channel_id }, roles: { ...k.discord?.roles, [agent]: r.role_id } }
+      k.discord = { ...k.discord, agents_category_id: cat.id, agents: { ...k.discord?.agents, [agent]: r.channel_id }, roles: { ...k.discord?.roles, [agent]: r.role_id } }
     })
     return r
   }

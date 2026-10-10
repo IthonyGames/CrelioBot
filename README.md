@@ -1,3 +1,4 @@
+<img width="512" height="512" alt="creliobot-icon-512" src="https://github.com/user-attachments/assets/09fe1532-abe6-4237-8716-a2be0179e5ae" />
 # CrelioBot
 
 **A team of Claude Code agents for every knowledge base you have — working together in your Discord server, on your own PC.**

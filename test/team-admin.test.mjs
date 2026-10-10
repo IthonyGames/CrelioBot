@@ -2,9 +2,10 @@
 // owner, applied live (the running MCP server and the plugin's access.json follow the Workspace).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_TEAM, loadInstance } from '../src/instance.mjs'
+import { avatarFile } from '../src/bots.mjs'
 import { accessFor } from '../src/runtime.mjs'
 import { makeWorkspace, REPO, snowflake } from './helpers.mjs'
 import { startFakeDiscord } from './fake-discord.mjs'
@@ -146,6 +147,8 @@ test('bot_register activates a bot whose token the owner put in .env, and return
   const { ws, fake, env, say, owner, alpha } = await setup()
   const kb = startMcp(env('alpha'))
   appendFileSync(join(ws, '.env'), 'DISCORD_TOKEN_FINANCES=token-finances\n')
+  mkdirSync(join(ws, 'avatars'), { recursive: true })
+  writeFileSync(join(ws, 'avatars', 'finances.png'), Buffer.from('89504e47', 'hex')) // a Custom agent's avatar lives in the Workspace
   fake.state.notInGuild.add(snowflake(9500))
   const p = JSON.parse(readFileSync(join(ws, 'kbs', 'alpha.json'), 'utf8')); p.agents.custom = ['finances']
   writeFileSync(join(ws, 'kbs', 'alpha.json'), JSON.stringify(p))
@@ -156,9 +159,23 @@ test('bot_register activates a bot whose token the owner put in .env, and return
   assert.equal(res.data.registered, true)
   assert.equal(res.data.in_server, false)
   assert.match(res.data.invite_url, new RegExp(`client_id=${snowflake(9500)}`))
+  assert.equal(res.data.avatar, 'set')
+  assert.equal(fake.state.avatars.get(snowflake(9500)), 'data:image/png;base64,iVBORw==', 'its avatar, from workspace/avatars/')
   const settings = JSON.parse(readFileSync(join(ws, 'crelio.json'), 'utf8'))
   assert.deepEqual(settings.bots.finances, { token_env: 'DISCORD_TOKEN_FINANCES', user_id: snowflake(9500), app_id: snowflake(9500) })
   assert.doesNotMatch(JSON.stringify(res.data), /token-finances/, 'the token never leaves the tool')
+})
+
+test('every Core agent and the Router has an avatar; the Workspace\'s own wins', () => {
+  const { ws } = makeWorkspace({ kbs: ['alpha'] })
+  const instance = loadInstance(ws, { repoDir: REPO })
+  const agents = readdirSync(join(REPO, 'plugin', 'agents')).map(f => f.replace(/\.md$/, ''))
+  for (const a of agents) assert.ok(existsSync(join(REPO, 'assets', 'avatars', `${a}.png`)) && existsSync(join(REPO, 'assets', 'avatars', 'svg', `${a}.svg`)), `${a}: PNG and SVG source`)
+  assert.equal(avatarFile(instance, 'manager'), join(REPO, 'assets', 'avatars', 'manager.png'))
+  assert.equal(avatarFile(instance, 'finances'), null)
+  mkdirSync(join(ws, 'avatars'))
+  writeFileSync(join(ws, 'avatars', 'manager.png'), 'x')
+  assert.equal(avatarFile(instance, 'manager'), join(ws, 'avatars', 'manager.png'))
 })
 
 test('bot_register without a token gives the owner the Portal steps — tokens never go through Discord', async () => {

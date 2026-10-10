@@ -1,4 +1,4 @@
-<img width="512" height="512" alt="creliobot-icon-512" src="https://github.com/user-attachments/assets/09fe1532-abe6-4237-8716-a2be0179e5ae" />
+<p align="center"><img src="assets/logo/creliobot-512.png" width="160" alt="CrelioBot logo: a white spark with a smiling face"></p>
 
 # CrelioBot
 
@@ -94,6 +94,7 @@ Everything that belongs to *your* instance lives in `workspace/`, which is never
 | `workspace/kbs/<id>.json` | One profile per KB: path, language, permission level (`guarded`/`full`), task adapter, channels, schedules, extra tools |
 | `workspace/.env` | Bot tokens, `OPENAI_API_KEY` |
 | `workspace/plugin/agents/` | Custom agents shared by every KB |
+| `workspace/avatars/` | Avatars for Custom agents' bots (or your own take on a Core one) — see [logo and avatars](docs/agent-avatars.md) |
 | `workspace/learnings/team.md` | Team learnings (how the agents work together) |
 
 Your knowledge base folders are left untouched, except for custom agents you create for one KB (`.claude/agents/`).

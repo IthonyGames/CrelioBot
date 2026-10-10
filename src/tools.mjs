@@ -695,7 +695,7 @@ export function createTools({
       throw e
     }
     return {
-      agent: a, registered: true, bot: r.username, activated: r.activated, in_server: r.in_server, approved_by: by,
+      agent: a, registered: true, bot: r.username, activated: r.activated, in_server: r.in_server, avatar: r.avatar, approved_by: by,
       ...(r.invite_url ? { invite_url: r.invite_url, next: 'Give the owner the invite_url to add it to the server (Authorize), then remind them to lock the app down: Installation → Install Link: None, then Bot → Public Bot OFF.' } : { next: 'Ready now — no restart needed.' }),
       ...(r.warnings.length ? { warnings: r.warnings } : {}),
     }

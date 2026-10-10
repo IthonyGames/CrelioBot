@@ -58,12 +58,18 @@ test('a post that runs long comes back with a note to keep chat posts short', as
   assert.match(long.data.note, /1200 characters — too long for a chat post.*brief/)
 })
 
-test('react and edit speak as the Manager unless an agent is named', async () => {
-  const msg = fake.addMessage(alpha.general_id, { content: 'thanks', author: { id: '42', username: 'anthony' } })
-  const res = await mcp.call('react', { chat_id: alpha.general_id, message_id: msg.id, emoji: '✅' })
+test('react speaks as the Manager unless an agent is named — and never on a person\'s message', async () => {
+  const puts = () => fake.state.requests.filter(r => r.method === 'PUT' && r.path.includes('/reactions/'))
+  const person = fake.addMessage(alpha.general_id, { content: 'thanks', author: { id: '42', username: 'anthony' } })
+  const refused = await mcp.call('react', { chat_id: alpha.general_id, message_id: person.id, emoji: '👍' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.text, /No reactions on people's messages/)
+  assert.equal(puts().length, 0)
+
+  const agentPost = fake.addMessage(alpha.general_id, { content: 'logo v2', author: { id: '7', username: 'Artist', bot: true } })
+  const res = await mcp.call('react', { chat_id: alpha.general_id, message_id: agentPost.id, emoji: '✅' })
   assert.equal(res.isError, false, res.text)
-  const put = fake.state.requests.filter(r => r.method === 'PUT').at(-1)
-  assert.equal(put.token, tokenOf('manager'))
+  assert.equal(puts().at(-1).token, tokenOf('manager'))
 })
 
 test('thread tools accept thread_id in place of chat_id', async () => {

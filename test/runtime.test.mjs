@@ -67,6 +67,7 @@ test('the plugin access file lets everyone talk in the KB General and Agent chan
   assert.deepEqual(Object.keys(access.groups).sort(), expected)
   for (const g of Object.values(access.groups)) assert.deepEqual(g, { requireMention: false, allowFrom: [] })
   assert.equal(access.ackReaction, '', 'no receipt reaction on people\'s messages')
+  assert.ok(file(s, 'settings.json').permissions.deny.includes('mcp__plugin_discord_discord__react'), 'the plugin\'s react is off: it would skip the people check')
 })
 
 test('two KBs never share a channel scope', () => {

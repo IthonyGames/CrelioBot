@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { ConfigError, loadInstance } from '../src/instance.mjs'
-import { runSession, startAll, stopAll, isSessionProcess, launchIds, pidFile } from '../src/launcher.mjs'
+import { runOnce, runSession, startAll, stopAll, isSessionProcess, launchIds, pidFile } from '../src/launcher.mjs'
 
 const REPO = resolve(import.meta.dirname, '..')
 
@@ -59,6 +59,10 @@ async function main() {
     case 'run':
       if (!sub) throw new ConfigError('Usage: crelio run <session id>')
       return runSession(workspace, sub, { repoDir: REPO })
+    case 'run-once': // one start of a session, in a fresh process (used by "run")
+      if (!sub) throw new ConfigError('Usage: crelio run-once <session id>')
+      process.exitCode = (await runOnce(workspace, sub, { repoDir: REPO })) ?? 1
+      return
     case 'stop': {
       const stopped = stopAll(workspace, { repoDir: REPO })
       console.log(stopped.length ? `Stopped: ${stopped.join(', ')}` : 'No running session found (stop flag set anyway).')

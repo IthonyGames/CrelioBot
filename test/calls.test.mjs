@@ -59,11 +59,13 @@ function world({ idle = 120 } = {}) {
   return { ws, instance, calls, adapter, delivered, posts, voiceCalls, texts, join: enter, leave: exit, speak, last: () => delivered.at(-1)?.text }
 }
 
-test('someone joining the KB voice channel starts a Call: the bot joins and the session is told', async () => {
+test('someone joining the KB voice channel starts a Call: the bot joins, greets them at once, and the session is told', async () => {
   const w = world()
   await w.join('alpha')
+  await sleep(20)
   assert.deepEqual(w.adapter.joins, [CALL.alpha])
-  assert.match(w.last(), /\[Call\] Anthony joined the voice channel <#\d+> — a Call has started.*call_say/)
+  assert.deepEqual(w.adapter.plays, ['audio:Ici ALPHA. Je t\'écoute.'], 'no wait for the session: it says which KB answers, in the language people speak')
+  assert.match(w.last(), /\[Call\] Anthony joined the voice channel <#\d+> — a Call has started\. I greeted them for you \(« Ici ALPHA\. Je t'écoute\. »\): don't greet again/)
   const state = JSON.parse(readFileSync(join(w.instance.stateDir('alpha'), 'call', 'state.json'), 'utf8'))
   assert.equal(state.active, true)
   assert.deepEqual(state.people, ['Anthony'])
@@ -107,11 +109,12 @@ test('a pause mid-sentence does not cut the request in two; noise and too-short 
 test('the session speaks: plain spoken text, chunked, played in the call and shown in the chat', async () => {
   const w = world()
   await w.join('alpha')
+  await sleep(20)
   const res = await w.calls.say('alpha', '**Fait !** Voir [le fil](https://discord.com/x) <@123> 🎉\n- point un')
   await sleep(20)
   assert.deepEqual(res, { spoken: true, listeners: ['Anthony'] })
-  assert.deepEqual(w.voiceCalls.speak, ['Fait ! Voir le fil\npoint un'])
-  assert.deepEqual(w.adapter.plays, ['audio:Fait ! Voir le fil\npoint un'])
+  assert.deepEqual(w.voiceCalls.speak.slice(1), ['Fait ! Voir le fil\npoint un'])
+  assert.deepEqual(w.adapter.plays.slice(1), ['audio:Fait ! Voir le fil\npoint un'])
   assert.match(w.posts.at(-1).content, /^🔊 Fait !/)
   assert.deepEqual(speechChunks('Un. Deux! Trois?', 6), ['Un.', 'Deux!', 'Trois?'])
   assert.equal(speakable('```js\ncode\n``` ok'), 'ok')
@@ -125,16 +128,16 @@ test('when everyone leaves, the bot stays and work goes on; what the session say
   assert.match(w.last(), /nobody is in the call now\. I stay in the channel\. Keep working: what you call_say now is kept, and said as soon as someone is back here/)
   const held = await w.calls.say('alpha', 'Le tableau est prêt.')
   assert.equal(held.spoken, false)
-  assert.equal(w.adapter.plays.length, 0)
+  const before = w.adapter.plays.length
   await w.join('alpha')
   await sleep(20)
-  assert.deepEqual(w.adapter.plays, ['audio:Le tableau est prêt.'], 'said at once, without waiting for the session')
+  assert.deepEqual(w.adapter.plays.slice(before), ['audio:Ici ALPHA. Le tableau est prêt.'], 'said at once, without waiting for the session')
   assert.match(w.last(), /Anthony is back in the call \(away 1 min\)\. I said right away what you kept for them: « Le tableau est prêt\. » Add only what changed since/)
   assert.deepEqual(w.adapter.joins, [CALL.alpha], 'no rejoin needed')
 
   await w.leave('alpha')
   await w.join('alpha')
-  assert.match(w.last(), /is back in the call \(away 1 min\)\. Give them a short spoken update/, 'nothing kept: the session gives the update')
+  assert.match(w.last(), /is back in the call \(away 1 min\)\. I told them « Ici ALPHA\. Je t'écoute\. »\. Give them a short spoken update/, 'nothing kept: the session gives the update')
 })
 
 test('call_end: the bot leaves when the last person leaves — or at once with now', async () => {

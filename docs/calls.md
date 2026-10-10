@@ -2,7 +2,7 @@
 
 Join your KB's voice channel and talk. The team's Manager bot joins you, listens, puts the team to work and answers out loud.
 
-- **You join** → the bot joins within seconds and greets you.
+- **You join** → the bot joins within seconds and tells you which team you're talking to ("Ici Quillz. Je t'écoute.").
 - **You talk** → each thing you say is transcribed, shown in the voice channel's chat and handed to the KB session, which answers out loud. Real work gets a Task thread, as usual, so the results stay readable. Only speech is sent: silence, breathing, a keyboard or a fan never reach the team.
 - **You leave while it works** → the bot stays in the channel and the team keeps working. What the team wanted to tell you is kept, and said the moment you're back.
 - **You switch to another team's call** → the bot goes with you: that team's Manager now listens and answers, and the first team knows you left for the other call. Its Call stays open while it keeps working; when you come back to its channel, the bot comes too and says right away what that team kept for you.

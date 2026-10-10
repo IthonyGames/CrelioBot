@@ -22,6 +22,13 @@ export class CallError extends Error { name = 'CallError' }
 // min_speech_ms: detected speech an utterance needs (less is noise). barge_ms: speech that interrupts the bot.
 // vad: speech detection settings (VAD_DEFAULTS in src/vad.mjs).
 export const CALL_DEFAULTS = { silence_ms: 800, merge_ms: 700, min_speech_ms: 200, barge_ms: 300, idle_minutes: 120, transcript: true, vad: {} }
+
+/** The bot's first words when it arrives in a call, in the language people speak (voice.language). */
+const GREETINGS = {
+  en: { here: kb => `${kb} here.`, listening: 'I\'m listening.' },
+  fr: { here: kb => `Ici ${kb}.`, listening: 'Je t\'écoute.' },
+  es: { here: kb => `Aquí ${kb}.`, listening: 'Te escucho.' },
+}
 const FRAME_MS = 20
 
 // ------------------------------------------------------------------ the KB session's inbox
@@ -157,6 +164,18 @@ export function createCalls({
   const kbName = kbId => instance.kb(kbId).name ?? kbId
   const quoted = lines => lines.map(h => `« ${h} »`).join(' ')
 
+  /** Said by the service the moment the bot arrives — the session takes seconds to answer, sometimes more. */
+  function greeting(kbId) {
+    const lang = String(instance.settings.voice?.language || instance.kb(kbId).language || instance.language).slice(0, 2)
+    const g = GREETINGS[lang] ?? GREETINGS.en
+    return { here: g.here(kbName(kbId)), listening: g.listening }
+  }
+
+  async function announce(c, guildId, text) {
+    await chat(c, `🔊 ${text}`)
+    play(c, guildId, text)
+  }
+
   /** `from`: the KB whose call they just left for this one — one bot serves every call, it came with them. */
   async function humanJoined(kbId, guildId, userId, name, { from = null } = {}) {
     const c = call(kbId)
@@ -177,21 +196,23 @@ export function createCalls({
       c.waiting = false
     }
     const came = from ? ` from the ${kbName(from)} call — the bot came with them` : ''
+    const g = greeting(kbId)
     if (!c.active) {
       Object.assign(c, { active: true, endRequested: false, held: [], since: new Date(now()).toISOString(), leftAt: null })
       persist(c)
-      await tell(c, `📞 [Call] ${name} joined the voice channel <#${c.channelId}>${came} — a Call has started. Greet them in one short sentence with call_say, then listen.`)
+      const hello = `${g.here} ${g.listening}`
+      await announce(c, guildId, hello)
+      await tell(c, `📞 [Call] ${name} joined the voice channel <#${c.channelId}>${came} — a Call has started. I greeted them for you (« ${hello} »): don't greet again — listen, and answer what they say with call_say.`)
     } else if (wasEmpty) {
       const held = c.held.splice(0)
       const away = c.leftAt ? ` (away ${minutes(now() - c.leftAt)} min)` : ''
       c.leftAt = null
       persist(c)
+      // What the session kept for them is said at once — not after the session's current turn ends.
+      await announce(c, guildId, `${g.here} ${held.length ? held.join(' ') : g.listening}`)
       if (!held.length) {
-        await tell(c, `📞 [Call] ${name} is back in the call${away}${came}. Give them a short spoken update of where the work stands (call_say).`)
+        await tell(c, `📞 [Call] ${name} is back in the call${away}${came}. I told them « ${g.here} ${g.listening} ». Give them a short spoken update of where the work stands (call_say).`)
       } else {
-        // What the session kept for them is said at once — not after the session's current turn ends.
-        await chat(c, `🔊 ${held.join(' ')}`)
-        play(c, guildId, held.join(' '))
         await tell(c, `📞 [Call] ${name} is back in the call${away}${came}. I said right away what you kept for them: ${quoted(held)} Add only what changed since (call_say), or listen.`)
       }
     } else {

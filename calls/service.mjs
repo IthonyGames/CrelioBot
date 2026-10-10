@@ -183,6 +183,21 @@ function startBot(tokenEnv, kbs) {
       return conn && conn.state.status !== voice.VoiceConnectionStatus.Destroyed ? conn.joinConfig.channelId : null
     },
     async join(guildId, channelId) {
+      const current = voice.getVoiceConnection(guildId)
+      if (current && current.state.status !== voice.VoiceConnectionStatus.Destroyed) {
+        // A move. rejoin() also updates the connection's own channel: joinVoiceChannel() would only ask
+        // Discord to move, and the library's next automatic reconnect would take the bot back.
+        const moving = new Promise(resolve => {
+          const onState = (_, next) => { if (next.status !== voice.VoiceConnectionStatus.Ready) { current.off('stateChange', onState); resolve() } }
+          current.on('stateChange', onState)
+          setTimeout(() => { current.off('stateChange', onState); resolve() }, 3_000)
+        })
+        current.rejoin({ channelId, selfDeaf: false, selfMute: false })
+        await moving
+        await voice.entersState(current, voice.VoiceConnectionStatus.Ready, 20_000)
+        log(`moved to voice channel ${channelId}`)
+        return
+      }
       const guild = await client.guilds.fetch(guildId)
       const conn = voice.joinVoiceChannel({ channelId, guildId, adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: false, debug: true })
       await voice.entersState(conn, voice.VoiceConnectionStatus.Ready, 20_000)

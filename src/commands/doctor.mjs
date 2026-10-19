@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { agentName, loadInstance } from '../instance.mjs'
 import { discordClient } from '../discord.mjs'
 import { buildSession } from '../runtime.mjs'
-import { findExecutable } from '../launcher.mjs'
+import { callsInstalled, findExecutable } from '../launcher.mjs'
 import { hasMessageContentIntent, inviteUrl } from '../permissions.mjs'
 import { localChanges, staleLock } from '../git.mjs'
 
@@ -96,6 +96,14 @@ export async function runDoctor({ workspace, repoDir, clientFor = t => discordCl
       checkChannel(kb.discord?.agents?.[a], `KB ${kb.id} #${a}`)
       if (!instance.botFor(kb.id, a)?.token) warn(`KB ${kb.id}: the ${agentName(a)} agent has no bot — it cannot post`, `crelio bot add ${a}`)
     }
+  }
+
+  // --- calls (optional voice channels, ADR-0007)
+  const callKbs = [...instance.kbs.values()].filter(k => k.call?.enabled)
+  if (callKbs.length) {
+    callsInstalled(instance.repoDir) ? ok('Call service installed') : fail(`Calls are on (${callKbs.map(k => k.id).join(', ')}) but the Call service is not installed`, 'crelio calls install, then restart CrelioBot')
+    if (!instance.secret(instance.settings.voice?.api_key_env ?? 'OPENAI_API_KEY')) fail('Calls need an OpenAI key for speech', 'Add OPENAI_API_KEY to workspace/.env')
+    for (const kb of callKbs) checkChannel(kb.discord?.call_id, `KB ${kb.id} voice channel`)
   }
 
   // --- sessions

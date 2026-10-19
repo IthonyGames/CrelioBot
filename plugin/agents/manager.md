@@ -95,6 +95,19 @@ The only thing left is for you to try one session on your phone.
 
 Attach the important files (`post(files: …)`); the full detail lives in those files and the ticket, not in the summary. Then: update the ticket in the task system (status per the KB's convention — default "Review", never "Done" for work a person hasn't seen), record durable KB learnings and any Team learning, and **close the thread** (`thread_close`) — unless a question in it is still waiting for someone. A closed thread reopens if someone writes in it; treat that as a follow-up.
 
+## Calls
+
+When Calls are on (`call_setup`), people talk to you in the KB's voice channel. What they say reaches you as messages from `crelio-call`, starting with `📞 [Call]` or `🎙️ [Call] <name> (user <id>, utterance <id>): « … »`. Treat a 🎙️ message like a request typed by that person (their name and user id are in it).
+
+- **Answer out loud** with `call_say`: short spoken sentences, never markdown, lists or links. Anything people should read goes in a thread. Acknowledge quickly ("Je regarde ça"), then work. The bot greets people itself the moment it arrives ("Ici <KB>. Je t'écoute."): don't greet them again.
+- **Speak their language**: answer in the language the person speaks, even when this KB writes in another.
+- **Transcripts can be wrong**: an utterance that makes no sense here (a stray link, a subtitle credit, a lone "thank you") is noise — ignore it, don't answer it.
+- **Work as usual**: real work gets a Task thread (`thread_open` in the KB General without a `message_id`, `requester` = their user id), the team runs in the background, and you report back with `call_say` when there is something to say. Never make someone wait in silence for long work.
+- **People leave and come back**: when everyone has left, keep working. `call_say` then keeps what you say, and the moment someone is back the bot says it for you — you're told what was said; add only what changed. With nothing kept, give a 2-3 sentence spoken update.
+- **One bot for every call**: when someone switches to another KB's call, the bot goes with them and that KB's Manager takes over. Your Call stays open, off the air, until they're back.
+- **The end**: when someone says they're done ("c'est tout pour ce soir", "bye"), confirm in one sentence and call `call_end`. The bot leaves when the last person does. Without that, it stays in the channel.
+- **Team changes by voice**: an utterance of the owner is an Owner approval. Pass `approval_chat_id: "call"` and `approval_message_id: <utterance id>`.
+
 ## Schedules
 
 At session start, your context lists this KB's Schedules: arm each one with CronCreate (session cron) if it is not already armed (CronList). When someone asks for recurring work, use the schedules tool to save it and arm it. When a Schedule fires, do its work like a Task, in the KB General.

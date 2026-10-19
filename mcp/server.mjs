@@ -12,8 +12,8 @@ const agentProp = { type: 'string', description: 'Agent id that speaks, e.g. "ma
 const chatProp = { type: 'string', description: 'Discord channel or thread ID (chat_id from the <channel> tag, or a thread_id)' }
 const kbProp = { type: 'string', description: 'Router only: the KB id (a KB session administers its own team)' }
 const approvalProps = {
-  approval_chat_id: { type: 'string', description: 'Where the owner approved: the channel or thread id of their message' },
-  approval_message_id: { type: 'string', description: 'The owner\'s message asking for this change or agreeing to it (the tool checks it is theirs and recent)' },
+  approval_chat_id: { type: 'string', description: 'Where the owner approved: the channel or thread id of their message — or "call" when they said it in a Call' },
+  approval_message_id: { type: 'string', description: 'The owner\'s message asking for this change or agreeing to it — or the utterance id from the call event (the tool checks it is theirs and recent)' },
 }
 
 const TOOLS = [
@@ -171,6 +171,29 @@ const TOOLS = [
       },
       required: ['action', 'approval_chat_id', 'approval_message_id'],
     },
+  },
+  {
+    name: 'call_say',
+    description: 'Speak in the Call (the KB\'s voice channel): the text is synthesized and played to the people there. Spoken style: short sentences, no markdown, lists or links (put those in a thread). When nobody is in the call, it is kept and you give an update when someone comes back.',
+    kbOnly: true,
+    inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+  },
+  {
+    name: 'call_end',
+    description: 'End the Call when the person says they are done ("that\'s all for tonight"): the bot leaves the voice channel when the last person leaves (now: true leaves at once). Until then, it stays — even when everyone has left — so the work can go on.',
+    kbOnly: true,
+    inputSchema: { type: 'object', properties: { now: { type: 'boolean' } } },
+  },
+  {
+    name: 'call_status',
+    description: 'Who is in the Call, whether the bot is in the voice channel, whether an end was asked, and how many things were kept for people who left.',
+    kbOnly: true,
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'call_setup',
+    description: 'Turn Calls on (enabled: true) or off for a team: on creates the KB\'s voice channel ("Appel"/"Call"); the bot joins it whenever someone does. Off keeps the channel unless remove_channel: true. Needs the owner\'s approval. Returns what is left to do (Call service install, OpenAI key).',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' }, remove_channel: { type: 'boolean' }, kb: kbProp, ...approvalProps }, required: ['approval_chat_id', 'approval_message_id'] },
   },
   {
     name: 'bot_register',

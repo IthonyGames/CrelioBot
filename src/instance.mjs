@@ -10,6 +10,7 @@ export class ConfigError extends Error {
 }
 
 export const ROUTER = 'router'
+export const CALLS = 'calls' // the Call service's id in the launcher and state/ (not a session)
 export const SPECIALISTS = ['kb-researcher', 'web-researcher', 'brainstormer', 'artist', 'ux-expert', 'marketing', 'lawyer', 'planner', 'coder']
 export const CORE_AGENTS = ['manager', ...SPECIALISTS]
 // A new KB starts with the Manager and these; the other Core agents are enabled when someone needs them.
@@ -88,7 +89,7 @@ export function loadInstance(workspaceDir, { repoDir } = {}) {
   for (const f of files) {
     const profile = readJson(join(kbDir, f), 'KB profile')
     const id = f.slice(0, -5)
-    if (!ID.test(id) || id === ROUTER) throw new ConfigError(`KB id "${id}" (${f}) must be lowercase letters, digits and dashes, and not "router"`)
+    if (!ID.test(id) || id === ROUTER || id === CALLS) throw new ConfigError(`KB id "${id}" (${f}) must be lowercase letters, digits and dashes, and not "router" or "calls"`)
     if (profile.id && profile.id !== id) throw new ConfigError(`KB profile ${f} says id "${profile.id}" — the file name decides the id`)
     if (!profile.path) throw new ConfigError(`KB profile ${f} has no "path"`)
     const permission = profile.permission ?? 'guarded'
@@ -208,7 +209,8 @@ export class Instance {
     if (sessionId === ROUTER) return [this.globalGeneralId].filter(Boolean)
     const d = this.kb(sessionId).discord ?? {}
     const agents = this.agentsFor(sessionId)
-    return [d.general_id, ...Object.entries(d.agents ?? {}).filter(([a]) => agents.includes(a)).map(([, c]) => c), ...Object.values(d.channels ?? {})].filter(Boolean)
+    const call = this.kb(sessionId).call?.enabled ? d.call_id : null // the voice channel's text chat
+    return [d.general_id, ...Object.entries(d.agents ?? {}).filter(([a]) => agents.includes(a)).map(([, c]) => c), ...Object.values(d.channels ?? {}), call].filter(Boolean)
   }
 
   /** Which session, KB, role and Agent a channel (not a thread) belongs to; null if outside the Instance. */
@@ -220,6 +222,7 @@ export class Instance {
       for (const [agent, ch] of Object.entries(d.agents ?? {})) {
         if (ch === channelId && this.agentsFor(id).includes(agent)) return { session: id, kb: id, role: 'agent', agent }
       }
+      if (channelId === d.call_id && kb.call?.enabled) return { session: id, kb: id, role: 'call', agent: 'manager', name: 'call' }
       // Other channels the owner had the team create in its category: the Manager serves them.
       for (const [name, ch] of Object.entries(d.channels ?? {})) {
         if (ch === channelId) return { session: id, kb: id, role: 'channel', agent: 'manager', name }

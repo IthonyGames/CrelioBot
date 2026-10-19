@@ -12,6 +12,7 @@ CrelioBot turns a Discord server into the workspace of Claude Code agent teams, 
 - `src/launcher.mjs` — windows, restart loop, stop.
 - `src/tools.mjs` + `mcp/server.mjs` — the team's MCP tools (zero-dependency JSON-RPC over stdio).
 - `src/discord.mjs`, `src/provision.mjs`, `src/bots.mjs` (bot registration), `src/voice.mjs`, `src/ogg.mjs`, `src/registry.mjs`, `src/context.mjs`.
+- `src/calls.mjs` — Calls logic and `src/vad.mjs` — speech detection (both dependency-free); `calls/` — the optional Call service, the only code with npm dependencies (ADR-0007).
 - `hooks/` — guard hooks for the guarded permission level (referenced by generated settings).
 - `plugin/` — the Claude Code plugin: agents, skills, SessionStart hook.
 - `templates/workspace/` — what setup copies into `workspace/` (git-ignored, ADR-0004).
@@ -19,7 +20,7 @@ CrelioBot turns a Discord server into the workspace of Claude Code agent teams, 
 
 ## Rules
 
-- No runtime dependencies (ADR-0005): Node 22 built-ins only.
+- No runtime dependencies (ADR-0005): Node 22 built-ins only — except inside `calls/` (ADR-0007), which the core never imports.
 - Every MCP tool stays inside its session's scope; add a scope test for any new tool.
 - Never log, print or post tokens; never read `workspace/.env` outside `src/instance.mjs`.
 - Test at the seams (see `docs/architecture.md#tests`): runtime fixtures, MCP server and hooks as processes against `test/fake-discord.mjs`. Run `npm test` before committing.

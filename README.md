@@ -33,11 +33,12 @@ Discord server
 - **Evidence or escalation**: agents decide on their own only when the KB or research backs the decision. Otherwise they tag the person most likely to know, with numbered questions and a recommendation. Durable answers are written back into the KB, so the same question never comes twice.
 - **Side threads**: talk to a specialist directly in its channel. Say "approved" and it hands the result back to the Manager.
 - **Voice**: your voice messages are transcribed. Agents answer with real Discord voice messages.
+- **Calls**: join a team's voice channel and work with it out loud. The Manager bot joins you, listens, puts the team to work and answers out loud. If you leave, it keeps working and stays in the channel. When you're back it tells you where things stand, and it leaves when you say you're done. Optional: [docs/calls.md](docs/calls.md).
 - **Schedules**: "every weekday at 8, morning brief". Recurring work runs inside the KB's session.
 - **A team that changes from Discord**: a new team starts small (Manager, KB Researcher, Web Researcher, Planner). Tell the Manager "turn on the Artist", "remove the Coder", "create a #dashboard channel", or "create an agent for video editing". It does it live, with no restart, once you've approved. The tools check that the approval is your own message. Bot tokens never go through Discord; you put them in `workspace/.env` and the Manager activates the bot.
 - **Restart-safe**: every session restarts by itself and comes back knowing its open threads and their latest messages.
 - **Guarded by default**: each KB's session is confined to its folder, with no access to secrets.
-- **No dependencies**: Node 22 built-ins only.
+- **No dependencies**: Node 22 built-ins only. Calls are the one opt-in exception, installed separately ([ADR-0007](docs/adr/0007-calls-are-an-optional-service-with-dependencies.md)).
 
 ## How it works
 
@@ -58,7 +59,7 @@ More detail: [docs/architecture.md](docs/architecture.md). Vocabulary: [CONTEXT.
 - [Claude Code](https://code.claude.com/docs/en/quickstart), signed in with a Claude plan (Pro/Max) or an API key
 - The Discord channel plugin: in Claude Code, `/plugin install discord@claude-plugins-official`
 - A Discord server where you are an administrator, and one Discord application per agent. The setup walks you through creating them.
-- Optional: an OpenAI API key for voice messages
+- Optional: an OpenAI API key for voice messages and Calls
 
 ## Quick start
 

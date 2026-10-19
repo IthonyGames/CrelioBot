@@ -18,7 +18,7 @@ async function setup({ ttsFormat } = {}) {
   return { ws, instance, a, fake, base, mcp, done: async () => { await mcp.close(); await fake.close() } }
 }
 
-test('a person\'s Voice note is transcribed in the KB language', async () => {
+test('a person\'s Voice note is transcribed in the language they speak (detected — not forced to the KB\'s)', async () => {
   const { a, fake, base, mcp, done } = await setup()
   fake.state.files.set('777', Buffer.from('fake-ogg-bytes'))
   const msg = fake.addMessage(a.general_id, {
@@ -33,7 +33,7 @@ test('a person\'s Voice note is transcribed in the KB language', async () => {
   assert.equal(res.data.voice_message, true)
   const call = fake.state.requests.find(r => r.path === '/v1/audio/transcriptions')
   assert.equal(call.model, 'whisper-1')
-  assert.equal(call.language, 'fr')
+  assert.equal(call.language, null)
   assert.equal(call.auth, 'Bearer sk-test')
 })
 
